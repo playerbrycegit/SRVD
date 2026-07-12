@@ -41,6 +41,25 @@ const api = {
   logout: async () => { await apiRequest('/auth/logout', { method: 'POST' }); clearToken(); },
   deleteAccount: (password) => apiRequest('/auth/delete-account', { method: 'POST', body: { password } }),
   isAuthenticated: () => Boolean(getToken()),
+
+  logShift: (input) => apiRequest('/shifts', { method: 'POST', body: input }),
+  listShifts: () => apiRequest('/shifts'),
+  deleteShift: (id) => apiRequest(`/shifts/${id}`, { method: 'DELETE' }),
+  getStats: () => apiRequest('/shifts/stats'),
+  setGoal: (input) => apiRequest('/goals', { method: 'POST', body: input }),
+  getGoalProgress: () => apiRequest('/goals'),
+
+  createRecipe: (input) => apiRequest('/recipes', { method: 'POST', body: input }),
+  listRecipes: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiRequest(`/recipes${qs ? '?' + qs : ''}`);
+  },
+  getRecipe: (id) => apiRequest(`/recipes/${id}`),
+  deleteRecipe: (id) => apiRequest(`/recipes/${id}`, { method: 'DELETE' }),
+
+  calcBatch: (input) => apiRequest('/tools/batch', { method: 'POST', body: input }),
+  calcAbv: (input) => apiRequest('/tools/abv', { method: 'POST', body: input }),
+  calcConvert: (input) => apiRequest('/tools/convert', { method: 'POST', body: input }),
 };
 
 window.STATION_API = api;

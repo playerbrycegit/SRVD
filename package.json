@@ -1,29 +1,25 @@
 {
   "name": "station",
-  "version": "0.1.0-foundation",
+  "version": "0.1.0-alpha",
+  "description": "STATION — professional operating system for bartenders. V1 scope: Auth, Home, Tools, Vault.",
   "private": true,
-  "description": "STATION - professional operating system for bartenders. V1 scope: Auth, Home, Tools, Vault.",
-  "engines": { "node": ">=22.5.0" },
   "scripts": {
-    "test": "node --test test/*.test.js",
-    "dev:api": "node scripts/dev-server.js",
-    "dev:web": "node -e \"require('./src/http/static-server').createStaticServer().listen(4002, () => console.log('Web on http://localhost:4002'))\"",
-    "migrate": "node -e \"const {createDb,runMigrations}=require('./src/shared-kernel/db');const db=createDb();console.log('Applied:', runMigrations(db));\"",
-    "lint": "echo 'ESLint is not installed in this sandbox (no network access to npm registry). See README > Remaining Work.' && exit 0",
-    "format": "echo 'Prettier is not installed in this sandbox (no network access to npm registry). See README > Remaining Work.' && exit 0",
-    "typecheck": "echo 'TypeScript is not installed in this sandbox (no network access to npm registry). See README > Remaining Work.' && exit 0"
+    "migrate": "node -e \"const {createDb,runMigrations}=require('./src/shared-kernel/db');const db=createDb();console.log(runMigrations(db));\"",
+    "server": "node bin/server.js",
+    "web": "node bin/web-server.js",
+    "test": "node --test test/*.test.js"
   },
-  "dependencies": {},
-  "devDependencies": {},
-  "_intendedDependencies_seeStage4Section2": {
-    "note": "Stage 4 §2 specifies these; not installed here because npm registry access returns 403 in this sandbox (verified during Stage 11 foundation setup). The current implementation uses zero dependencies (Node built-ins only) so it runs today; installing these in a networked environment is additive, not a rewrite.",
-    "backend-framework": "fastify (or equivalent minimal Node framework)",
-    "orm": "prisma (or equivalent schema-first ORM) - would replace src/shared-kernel/db.js's direct node:sqlite calls with Postgres",
-    "database-driver": "pg",
-    "validation": "zod (current hand-written validation in src/shared-kernel/validation is functionally equivalent and dependency-free)",
-    "testing": "none needed - node:test (built-in) is sufficient and already in use",
-    "linting": "eslint",
-    "formatting": "prettier",
-    "typechecking": "typescript (with checkJs, or a full .ts migration)"
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "_notes": {
+    "runtime": "This package.json declares zero dependencies on purpose. Everything currently runs on Node built-ins only (node:sqlite, node:test, node:http) because this repo was bootstrapped in a network-isolated sandbox — see README 'Sandbox Substitution' for the full explanation and the swap-in path to the originally-approved stack below.",
+    "intended_production_stack": {
+      "database": "PostgreSQL (replaces node:sqlite — see src/shared-kernel/db.js)",
+      "http_framework": "Fastify-class framework (replaces src/http/server.js's raw node:http routing)",
+      "orm": "Schema-first TypeScript ORM (e.g. Prisma-class tooling)",
+      "validation": "Same shared-schema approach already implemented in src/shared-kernel/validation — portable as-is",
+      "test_runner": "node:test is a legitimate long-term choice and does not need replacing"
+    }
   }
 }
