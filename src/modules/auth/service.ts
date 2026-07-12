@@ -193,6 +193,16 @@ export class AuthService {
     return session.user_id;
   }
 
+  /** Companion to verifySession, for the one caller (Settings' session list) that needs to know
+   * *which* session a token belongs to, not just which user - kept separate rather than changing
+   * the primary chokepoint's signature everywhere else depends on. */
+  getSessionId(token: string): string | null {
+    if (!token) return null;
+    const tokenHash = hashToken(token);
+    const session = this.db.get<SessionRow>('SELECT id FROM sessions WHERE refresh_token_hash = ? AND revoked_at IS NULL', [tokenHash]);
+    return session?.id ?? null;
+  }
+
   /** Logout: revokes one session only, never all of a user's devices (Stage 4 §6 multi-device support). */
   logout(token: string): void {
     const tokenHash = hashToken(token);

@@ -25,6 +25,8 @@ export function isRateLimited(key: string, { maxRequests, windowMs }: RateLimitO
 // Stage 4 §17: auth endpoints get the tight limit (blunts credential stuffing / enumeration).
 export const AUTH_LIMIT: RateLimitOptions = { maxRequests: 10, windowMs: 60_000 };
 export const STANDARD_LIMIT: RateLimitOptions = { maxRequests: 120, windowMs: 60_000 };
+// §13: export is sensitive and comparatively expensive - a tighter limit than standard reads.
+export const EXPORT_LIMIT: RateLimitOptions = { maxRequests: 5, windowMs: 60_000 };
 
 export function clearAll(): void {
   buckets.clear();

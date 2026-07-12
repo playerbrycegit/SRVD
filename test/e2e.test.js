@@ -181,6 +181,55 @@ test('E2E: an expired/garbage token is rejected with 401, not a server error', a
   });
 });
 
+test('E2E SETTINGS: get -> update -> get reflects the change', async () => {
+  await withServer(async (base) => {
+    const session = await registerVerifyLogin(base, 'settings@example.com');
+    const before = await get(base, '/settings', session.token);
+    assert.equal(before.json.data.unitPreference, 'oz');
+    const patched = await fetch(`${base}/settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+      body: JSON.stringify({ unitPreference: 'ml' }),
+    });
+    assert.equal(patched.status, 200);
+    const after = await get(base, '/settings', session.token);
+    assert.equal(after.json.data.unitPreference, 'ml');
+  });
+});
+
+test('E2E SETTINGS: data export requires auth and returns owned data only', async () => {
+  await withServer(async (base) => {
+    const noAuth = await get(base, '/settings/export');
+    assert.equal(noAuth.status, 401);
+    const session = await registerVerifyLogin(base, 'export@example.com');
+    await post(base, '/shifts', { shift_date: '2026-07-12', cash_tips: 40, card_tips: 10 }, session.token);
+    const exported = await get(base, '/settings/export', session.token);
+    assert.equal(exported.status, 200);
+    assert.equal(exported.json.data.shifts.length, 1);
+  });
+});
+
+test('E2E SETTINGS: export rate limit is tighter than standard (5/min)', async () => {
+  await withServer(async (base) => {
+    const session = await registerVerifyLogin(base, 'exportlimit@example.com');
+    let last;
+    for (let i = 0; i < 7; i++) {
+      last = await get(base, '/settings/export', session.token);
+    }
+    assert.equal(last.status, 429);
+  });
+});
+
+test('E2E SETTINGS: sessions list shows the current session correctly', async () => {
+  await withServer(async (base) => {
+    const session = await registerVerifyLogin(base, 'sessionsreal@example.com');
+    const list = await get(base, '/settings/sessions', session.token);
+    assert.equal(list.status, 200);
+    assert.equal(list.json.data.length, 1);
+    assert.equal(list.json.data[0].current, true);
+  });
+});
+
 test('E2E ALPHA: invite -> register -> accept invitation -> submit feedback', async () => {
   await withServer(async (base) => {
     const inviter = await registerVerifyLogin(base, 'inviter@example.com');

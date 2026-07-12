@@ -18,6 +18,34 @@ export class ValidationError extends Error {
 }
 
 export const RECIPE_CATEGORIES: readonly RecipeCategory[] = ['Classic', 'Original', 'Stirred', 'Shaken', 'Built', 'Batch'];
+const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
+
+export function validateSettingsUpdate(input: { displayName?: unknown; unitPreference?: unknown; currencyPreference?: unknown }): {
+  displayName?: string | null;
+  unitPreference?: 'oz' | 'ml';
+  currencyPreference?: string;
+} {
+  const result: { displayName?: string | null; unitPreference?: 'oz' | 'ml'; currencyPreference?: string } = {};
+  if (input.displayName !== undefined) {
+    if (input.displayName !== null && (typeof input.displayName !== 'string' || input.displayName.length > 80)) {
+      throw new ValidationError('Display name must be 80 characters or fewer', 'displayName');
+    }
+    result.displayName = input.displayName === null ? null : (input.displayName as string).trim();
+  }
+  if (input.unitPreference !== undefined) {
+    if (input.unitPreference !== 'oz' && input.unitPreference !== 'ml') {
+      throw new ValidationError('Unit preference must be "oz" or "ml"', 'unitPreference');
+    }
+    result.unitPreference = input.unitPreference;
+  }
+  if (input.currencyPreference !== undefined) {
+    if (typeof input.currencyPreference !== 'string' || !CURRENCY_CODE_PATTERN.test(input.currencyPreference)) {
+      throw new ValidationError('Currency must be a 3-letter code, e.g. USD', 'currencyPreference');
+    }
+    result.currencyPreference = input.currencyPreference;
+  }
+  return result;
+}
 
 export function isValidEmail(email: unknown): email is string {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);

@@ -1,0 +1,64 @@
+# STATION CI pipeline. Source: this phase's §10.
+#
+# HONESTY NOTE: this file has never run. This sandbox has no git remote and no network access to
+# push to GitHub or trigger Actions. It's written to match this project's actual, verified-locally
+# commands (npm run build, node --test) exactly - not a generic template - but "correctly written"
+# and "verified to work in GitHub's runners" are different claims, and only the first is true here.
+# The first real push to a GitHub repo with this file present is the actual first execution.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.5'
+
+      # This project currently has zero npm dependencies (see package.json _notes) - TypeScript
+      # was available globally in the sandbox this was built in, which a real CI runner will not
+      # have. A real environment needs `npm install --save-dev typescript @types/node` added to
+      # package.json before this step will work - flagged here, not silently assumed solved.
+      - name: Install dependencies
+        run: npm install
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Environment validation (test mode)
+        run: NODE_ENV=test node -e "require('./dist/src/shared-kernel/env').loadConfig()"
+
+      - name: Unit + integration tests
+        run: node --test test/*.test.js
+
+      - name: Formatting check
+        run: npx prettier --check .
+        continue-on-error: true # .prettierrc.json exists but has never been run by a real prettier install - see prior audit
+
+      - name: Lint
+        run: npx eslint .
+        continue-on-error: true # .eslintrc.json exists but has never been run by a real eslint install - see prior audit
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+        continue-on-error: true # advisory only at this stage - zero dependencies today, but this becomes real once pg/email-provider packages are added
+
+  # Deployment job intentionally not included. §10 asks for "migration-safe deployment ordering"
+  # and "prevent deployment when tests fail" - both require an actual hosting target (Vercel/
+  # Railway/Render/Fly/etc.) and its secrets configured in this repo's GitHub settings, neither of
+  # which exists yet (see the completion report's Deployed Architecture section - there isn't
+  # one). Adding a deploy job that references a nonexistent target would be worse than omitting
+  # it: it would look configured while silently failing every run.

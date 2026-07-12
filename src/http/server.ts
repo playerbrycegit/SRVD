@@ -16,10 +16,11 @@ import { AuthService } from '../modules/auth/service';
 import { ShiftsService } from '../modules/shifts/service';
 import { RecipesService } from '../modules/recipes/service';
 import { AlphaService } from '../modules/alpha/service';
+import { SettingsService } from '../modules/settings/service';
 import { ValidationError } from '../shared-kernel/validation';
 import { CalculationError, scaleBatch, calculateAbv, convertUnit } from '../shared-kernel/calculations';
 import { writeAudit } from '../shared-kernel/audit';
-import { isRateLimited, AUTH_LIMIT, STANDARD_LIMIT } from './rate-limit';
+import { isRateLimited, AUTH_LIMIT, STANDARD_LIMIT, EXPORT_LIMIT } from './rate-limit';
 import type { Database } from '../shared-kernel/data-access';
 import type { AppConfig } from '../shared-kernel/env';
 import type { ApiSuccessEnvelope, ApiErrorEnvelope } from '../shared-kernel/types';
@@ -52,6 +53,7 @@ export function createServer(db: Database, config: Pick<AppConfig, 'allowDevToke
   const shifts = new ShiftsService(db);
   const recipes = new RecipesService(db);
   const alpha = new AlphaService(db);
+  const settings = new SettingsService(db);
 
   /** Only attaches devOnly data when config permits it — see file header. */
   function devOnly(payload: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -64,8 +66,9 @@ export function createServer(db: Database, config: Pick<AppConfig, 'allowDevToke
     const clientIp = req.socket.remoteAddress ?? 'unknown';
 
     const isAuthRoute = url.pathname.startsWith('/auth/');
-    const limit = isAuthRoute ? AUTH_LIMIT : STANDARD_LIMIT;
-    const limitKey = `${clientIp}:${isAuthRoute ? 'auth' : 'standard'}`;
+    const isExportRoute = url.pathname === '/settings/export';
+    const limit = isAuthRoute ? AUTH_LIMIT : isExportRoute ? EXPORT_LIMIT : STANDARD_LIMIT;
+    const limitKey = `${clientIp}:${isAuthRoute ? 'auth' : isExportRoute ? 'export' : 'standard'}`;
     if (isRateLimited(limitKey, limit)) {
       sendError(res, 429, 'Too many requests — try again shortly', null);
       return;
@@ -127,6 +130,32 @@ export function createServer(db: Database, config: Pick<AppConfig, 'allowDevToke
         const body = await readJsonBody(req);
         auth.deleteAccount({ userId: authedUserId, password: body.password as string });
         return sendJson(res, 200, { data: { deleted: true } });
+      }
+
+      // ---------- Settings ----------
+      if (req.method === 'GET' && url.pathname === '/settings') {
+        return sendJson(res, 200, { data: settings.getSettings(authedUserId) });
+      }
+      if (req.method === 'PATCH' && url.pathname === '/settings') {
+        const body = await readJsonBody(req);
+        return sendJson(res, 200, { data: settings.updateSettings(authedUserId, body) });
+      }
+      if (req.method === 'GET' && url.pathname === '/settings/sessions') {
+        const currentSessionId = auth.getSessionId(bearer);
+        return sendJson(res, 200, { data: settings.listSessions(authedUserId, currentSessionId) });
+      }
+      if (req.method === 'DELETE' && /^\/settings\/sessions\/[^/]+$/.test(url.pathname)) {
+        const id = url.pathname.split('/')[3] as string;
+        const ok = settings.revokeSession(authedUserId, id);
+        return ok ? sendJson(res, 200, { data: { revoked: true } }) : sendError(res, 404, 'Session not found', null);
+      }
+      if (req.method === 'POST' && url.pathname === '/settings/sessions/revoke-all') {
+        const currentSessionId = auth.getSessionId(bearer);
+        const count = settings.revokeAllSessions(authedUserId, currentSessionId);
+        return sendJson(res, 200, { data: { revokedCount: count } });
+      }
+      if (req.method === 'GET' && url.pathname === '/settings/export') {
+        return sendJson(res, 200, { data: settings.exportData(authedUserId) });
       }
 
       // ---------- Alpha operations ----------
