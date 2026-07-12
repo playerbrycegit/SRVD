@@ -3,7 +3,7 @@
  * No framework dependency - matches Stage 4 §2's decision to keep the vanilla core rather than
  * introduce React speculatively.
  */
-const API_BASE = window.STATION_API_BASE || 'http://localhost:4000';
+const API_BASE = window.STATION_API_BASE || 'http://localhost:4001';
 const TOKEN_KEY = 'station_session_token';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY); }

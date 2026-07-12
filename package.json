@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "migrate": "node -e \"const {createDb,runMigrations}=require('./src/shared-kernel/db');const db=createDb();console.log(runMigrations(db));\"",
-    "server": "node bin/server.js",
-    "web": "node bin/web-server.js",
+    "server": "node scripts/dev-server.js",
+    "web": "node -e \"require('./src/http/static-server').createStaticServer().listen(8080,()=>console.log('STATION web app at http://localhost:8080'))\"",
     "test": "node --test test/*.test.js"
   },
   "engines": {
