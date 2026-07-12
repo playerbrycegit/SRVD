@@ -11,6 +11,7 @@ const { URL } = require('node:url');
 const { AuthService } = require('../modules/auth/service');
 const { ShiftsService } = require('../modules/shifts/service');
 const { RecipesService } = require('../modules/recipes/service');
+const { AlphaService } = require('../modules/alpha/service');
 const { ValidationError } = require('../shared-kernel/validation');
 const { CalculationError, scaleBatch, calculateAbv, convertUnit } = require('../shared-kernel/calculations');
 const { writeAudit } = require('../shared-kernel/audit');
@@ -41,6 +42,7 @@ function createServer(db) {
   const auth = new AuthService(db);
   const shifts = new ShiftsService(db);
   const recipes = new RecipesService(db);
+  const alpha = new AlphaService(db);
 
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -92,6 +94,12 @@ function createServer(db) {
         auth.logout(bearer);
         return sendJson(res, 200, { data: { loggedOut: true } });
       }
+      // §3: accept-invitation is unauthenticated (happens before/alongside registration).
+      if (req.method === 'POST' && url.pathname === '/alpha/accept-invitation') {
+        const body = await readJsonBody(req);
+        const result = alpha.acceptInvitation({ token: body.token, userId: body.userId });
+        return sendJson(res, 200, { data: result });
+      }
       if (url.pathname === '/health') {
         return sendJson(res, 200, { data: { status: 'ok' } });
       }
@@ -108,6 +116,24 @@ function createServer(db) {
         const body = await readJsonBody(req);
         auth.deleteAccount({ userId, password: body.password });
         return sendJson(res, 200, { data: { deleted: true } });
+      }
+
+      // ---------- Alpha operations ----------
+      // NOTE: /alpha/invite has no admin-role check - any authenticated user can currently call it.
+      // This is a real, stated gap (no admin/role system exists yet), not an oversight - see the
+      // completion report's Known Limitations. Safe only because no production deployment exists.
+      if (req.method === 'POST' && url.pathname === '/alpha/invite') {
+        const body = await readJsonBody(req);
+        const result = alpha.inviteParticipant(body);
+        return sendJson(res, 201, { data: { id: result.id, email: result.email, expiresAt: result.expiresAt }, devOnly: { invitationToken: result.token } });
+      }
+      if (req.method === 'POST' && url.pathname === '/alpha/feedback') {
+        const body = await readJsonBody(req);
+        const result = alpha.submitFeedback(userId, body);
+        return sendJson(res, 201, { data: result });
+      }
+      if (req.method === 'GET' && url.pathname === '/alpha/feedback') {
+        return sendJson(res, 200, { data: alpha.listMyFeedback(userId) });
       }
 
       // ---------- Shifts ----------

@@ -179,3 +179,59 @@ test('E2E: an expired/garbage token is rejected with 401, not a server error', a
     assert.equal(res.status, 401);
   });
 });
+
+test('E2E ALPHA: invite -> register -> accept invitation -> submit feedback', async () => {
+  await withServer(async (base) => {
+    const inviter = await registerVerifyLogin(base, 'inviter@example.com');
+    const invite = await post(base, '/alpha/invite', { email: 'newbartender@example.com', segment: 'new_bartender' }, inviter.token);
+    assert.equal(invite.status, 201);
+    const invitationToken = invite.json.devOnly.invitationToken;
+
+    const session = await registerVerifyLogin(base, 'newbartender@example.com');
+    const accept = await post(base, '/alpha/accept-invitation', { token: invitationToken, userId: session.user.id });
+    assert.equal(accept.status, 200);
+    assert.equal(accept.json.data.segment, 'new_bartender');
+
+    const feedback = await post(base, '/alpha/feedback', {
+      feedbackType: 'bug', severity: 'medium', description: 'Search felt slow on my phone', route: '/vault',
+    }, session.token);
+    assert.equal(feedback.status, 201);
+
+    const myFeedback = await get(base, '/alpha/feedback', session.token);
+    assert.equal(myFeedback.json.data.length, 1);
+  });
+});
+
+test('E2E ALPHA: an invitation cannot be accepted twice', async () => {
+  await withServer(async (base) => {
+    const inviter = await registerVerifyLogin(base, 'inviter2@example.com');
+    const invite = await post(base, '/alpha/invite', { email: 'twice@example.com' }, inviter.token);
+    const token = invite.json.devOnly.invitationToken;
+    const session = await registerVerifyLogin(base, 'twice@example.com');
+    await post(base, '/alpha/accept-invitation', { token, userId: session.user.id });
+    const second = await post(base, '/alpha/accept-invitation', { token, userId: session.user.id });
+    assert.equal(second.status, 400);
+  });
+});
+
+test('E2E ALPHA: invite creation requires authentication', async () => {
+  await withServer(async (base) => {
+    const res = await post(base, '/alpha/invite', { email: 'nobody@example.com' });
+    assert.equal(res.status, 401);
+  });
+});
+
+test('E2E ALPHA: feedback submission requires authentication', async () => {
+  await withServer(async (base) => {
+    const res = await post(base, '/alpha/feedback', { feedbackType: 'bug', severity: 'low', description: 'x' });
+    assert.equal(res.status, 401);
+  });
+});
+
+test('E2E ALPHA: feedback with an invalid type is rejected with a clear error, not a server error', async () => {
+  await withServer(async (base) => {
+    const session = await registerVerifyLogin(base, 'feedback@example.com');
+    const res = await post(base, '/alpha/feedback', { feedbackType: 'not-real', severity: 'low', description: 'x' }, session.token);
+    assert.equal(res.status, 400);
+  });
+});

@@ -81,6 +81,45 @@ function validateRecipe({ name, category, glassware, method, tasting_notes, ingr
   };
 }
 
+const FEEDBACK_TYPES = ['bug', 'confusing_experience', 'performance', 'calculation_concern', 'accessibility', 'feature_request', 'positive', 'other'];
+const SEVERITIES = ['critical', 'high', 'medium', 'low'];
+
+/**
+ * Redacts patterns that match our own token formats (64-char hex session/verification tokens,
+ * scrypt salt:hash pairs) before feedback text is ever persisted. This is a real technical
+ * safeguard, not just a policy statement in a welcome guide — someone pasting a copied token or
+ * password hash into a bug report gets it stripped automatically, not merely discouraged.
+ */
+function redactSensitivePatterns(text) {
+  if (!text) return text;
+  return String(text)
+    .replace(/\b[a-f0-9]{64}\b/gi, '[REDACTED-TOKEN]')
+    .replace(/\b[a-f0-9]{32}:[a-f0-9]{128}\b/gi, '[REDACTED-CREDENTIAL]');
+}
+
+function validateFeedback({ feedbackType, severity, description, expectedBehavior, actualBehavior, reproductionSteps, affectedFeature, route, deviceType, browser, operatingSystem, frequency, contactPermission }) {
+  if (!FEEDBACK_TYPES.includes(feedbackType)) throw new ValidationError('Invalid feedback type', 'feedbackType');
+  if (!SEVERITIES.includes(severity)) throw new ValidationError('Invalid severity', 'severity');
+  if (!description || typeof description !== 'string' || description.trim().length < 1) {
+    throw new ValidationError('Description is required', 'description');
+  }
+  if (description.length > 2000) throw new ValidationError('Description is too long (max 2000 characters)', 'description');
+  return {
+    feedbackType, severity,
+    description: redactSensitivePatterns(description.trim()),
+    expectedBehavior: redactSensitivePatterns(expectedBehavior || null),
+    actualBehavior: redactSensitivePatterns(actualBehavior || null),
+    reproductionSteps: redactSensitivePatterns(reproductionSteps || null),
+    affectedFeature: affectedFeature || null,
+    route: route || null,
+    deviceType: deviceType || null,
+    browser: browser || null,
+    operatingSystem: operatingSystem || null,
+    frequency: frequency || null,
+    contactPermission: Boolean(contactPermission),
+  };
+}
+
 module.exports = {
   ValidationError,
   RECIPE_CATEGORIES,
@@ -90,4 +129,8 @@ module.exports = {
   validateShift,
   validateGoal,
   validateRecipe,
+  validateFeedback,
+  redactSensitivePatterns,
+  FEEDBACK_TYPES,
+  SEVERITIES,
 };
