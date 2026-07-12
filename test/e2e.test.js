@@ -1,15 +1,16 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createDb, runMigrations } = require('../src/shared-kernel/db');
-const { createServer } = require('../src/http/server');
-const { clearAll } = require('../src/http/rate-limit');
+const { createDb, runMigrations } = require('../dist/src/shared-kernel/data-access');
+const { createServer } = require('../dist/src/http/server');
+const { clearAll } = require('../dist/src/http/rate-limit');
 
 async function withServer(fn) {
   clearAll(); // rate-limit buckets are module-level state; reset between tests so they don't bleed across
   const db = createDb(':memory:');
   runMigrations(db);
-  const server = createServer(db);
+  const testConfig = { allowDevTokenExposure: true }; // matches non-production default (env.ts)
+  const server = createServer(db, testConfig);
   await new Promise((resolve) => server.listen(0, resolve));
   const port = server.address().port;
   const base = `http://127.0.0.1:${port}`;

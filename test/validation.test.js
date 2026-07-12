@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   validateEmail, validatePassword, validateShift, validateGoal, validateRecipe, ValidationError,
-} = require('../src/shared-kernel/validation');
+} = require('../dist/src/shared-kernel/validation');
 
 test('email: valid email passes and is normalized to lowercase', () => {
   assert.equal(validateEmail('Bartender@Example.com'), 'bartender@example.com');

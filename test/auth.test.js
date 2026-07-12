@@ -1,9 +1,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createDb, runMigrations } = require('../src/shared-kernel/db');
-const { AuthService } = require('../src/modules/auth/service');
-const { ValidationError } = require('../src/shared-kernel/validation');
+const { createDb, runMigrations } = require('../dist/src/shared-kernel/data-access');
+const { AuthService } = require('../dist/src/modules/auth/service');
+const { ValidationError } = require('../dist/src/shared-kernel/validation');
 
 function freshDb() {
   const db = createDb(':memory:');
@@ -28,7 +28,7 @@ test('register: password is never stored in plaintext', () => {
   const db = freshDb();
   const auth = new AuthService(db);
   auth.register({ email: 'test@example.com', password: 'password123' });
-  const row = db.prepare('SELECT password_hash FROM users').get();
+  const row = db.get('SELECT password_hash FROM users');
   assert.ok(!row.password_hash.includes('password123'));
   assert.match(row.password_hash, /^[a-f0-9]+:[a-f0-9]+$/); // salt:hash format
 });
@@ -98,10 +98,10 @@ test('account deletion: cascades to sessions (foreign key ON DELETE CASCADE)', (
   const auth = new AuthService(db);
   const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
   auth.login({ email: 'test@example.com', password: 'password123' });
-  assert.equal(db.prepare('SELECT COUNT(*) as c FROM sessions WHERE user_id = ?').get(id).c, 1);
+  assert.equal(db.get('SELECT COUNT(*) as c FROM sessions WHERE user_id = ?', [id]).c, 1);
   auth.deleteAccount({ userId: id, password: 'password123' });
-  assert.equal(db.prepare('SELECT COUNT(*) as c FROM sessions WHERE user_id = ?').get(id).c, 0);
-  assert.equal(db.prepare('SELECT COUNT(*) as c FROM users WHERE id = ?').get(id).c, 0);
+  assert.equal(db.get('SELECT COUNT(*) as c FROM sessions WHERE user_id = ?', [id]).c, 0);
+  assert.equal(db.get('SELECT COUNT(*) as c FROM users WHERE id = ?', [id]).c, 0);
 });
 
 test('account deletion: writes an audit_log entry that survives the user row being gone (nullable FK)', () => {
@@ -109,7 +109,7 @@ test('account deletion: writes an audit_log entry that survives the user row bei
   const auth = new AuthService(db);
   const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
   auth.deleteAccount({ userId: id, password: 'password123' });
-  const entry = db.prepare("SELECT * FROM audit_log WHERE action = 'account_deleted' AND resource_id = ?").get(id);
+  const entry = db.get("SELECT * FROM audit_log WHERE action = 'account_deleted' AND resource_id = ?", [id]);
   assert.ok(entry, 'audit entry should exist even though the user row is gone');
   assert.equal(entry.user_id, null); // ON DELETE SET NULL per migration 008
 });
@@ -144,7 +144,7 @@ test('verification: an expired token is rejected', () => {
   const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
   const token = auth.issueVerificationToken(id);
   // simulate expiry by backdating the row directly (no fake timers needed for this one check)
-  db.prepare('UPDATE verification_tokens SET expires_at = ? WHERE user_id = ?').run(Date.now() - 1000, id);
+  db.run('UPDATE verification_tokens SET expires_at = ? WHERE user_id = ?', [Date.now() - 1000, id]);
   assert.throws(() => auth.verifyEmail(token), /invalid or has expired/);
 });
 

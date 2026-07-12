@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createStaticServer } = require('../src/http/static-server');
+const { createStaticServer } = require('../dist/src/http/static-server');
 
 async function withStaticServer(fn) {
   const server = createStaticServer();

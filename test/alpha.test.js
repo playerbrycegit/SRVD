@@ -1,10 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createDb, runMigrations } = require('../src/shared-kernel/db');
-const { AuthService } = require('../src/modules/auth/service');
-const { AlphaService } = require('../src/modules/alpha/service');
-const { ValidationError, redactSensitivePatterns } = require('../src/shared-kernel/validation');
+const { createDb, runMigrations } = require('../dist/src/shared-kernel/data-access');
+const { AuthService } = require('../dist/src/modules/auth/service');
+const { AlphaService } = require('../dist/src/modules/alpha/service');
+const { ValidationError, redactSensitivePatterns } = require('../dist/src/shared-kernel/validation');
 
 function setup() {
   const db = createDb(':memory:');
@@ -39,7 +39,7 @@ test('invite: a token cannot be accepted twice (single-use)', () => {
 test('invite: an expired invitation is rejected', () => {
   const { db, alpha, auth } = setup();
   const invite = alpha.inviteParticipant({ email: 'bartender@example.com' });
-  db.prepare('UPDATE alpha_invitations SET expires_at = ? WHERE id = ?').run(Date.now() - 1000, invite.id);
+  db.run('UPDATE alpha_invitations SET expires_at = ? WHERE id = ?', [Date.now() - 1000, invite.id]);
   const { id: userId } = auth.register({ email: 'bartender@example.com', password: 'password123' });
   assert.throws(() => alpha.acceptInvitation({ token: invite.token, userId }), /expired/);
 });
@@ -139,7 +139,7 @@ test('feedback: a pasted token in the description is redacted before storage, no
     feedbackType: 'bug', severity: 'critical',
     description: `I was logged in with token ${fakeToken} when this happened`,
   });
-  const stored = db.prepare('SELECT description FROM feedback_submissions WHERE id = ?').get(result.id);
+  const stored = db.get('SELECT description FROM feedback_submissions WHERE id = ?', [result.id]);
   assert.ok(!stored.description.includes(fakeToken));
   assert.match(stored.description, /\[REDACTED-TOKEN\]/);
 });

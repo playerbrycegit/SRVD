@@ -1,27 +1,29 @@
-'use strict';
 /**
- * Shared Kernel calculation engine. Pure, stateless functions - single source of truth per
- * Stage 4 §10, never duplicated per-endpoint or per-screen (Stage 9 §1). Every formula, precision
- * rule, and error-handling behavior below matches Stage 4 §10 exactly.
+ * Shared Kernel calculation engine. Pure, stateless, fully typed per this migration's §2
+ * requirement. Source of truth for every formula: Stage 4 §10.
  */
+import type { BatchIngredientInput, BatchIngredientResult, AbvIngredientInput, AbvResult, VolumeUnit } from '../types';
 
-class CalculationError extends Error {
-  constructor(message) {
+export class CalculationError extends Error {
+  constructor(message: string) {
     super(message);
     this.name = 'CalculationError';
   }
 }
 
-function round(value, decimals) {
+function round(value: number, decimals: number): number {
   const factor = 10 ** decimals;
   return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
-/**
- * Batch scaling. scaled_amount = amount * (target_servings / base_servings)
- * Precision: 2 decimal places (Stage 4 §10).
- */
-function scaleBatch({ baseServings, targetServings, ingredients }) {
+interface ScaleBatchInput {
+  baseServings: number;
+  targetServings: number;
+  ingredients: BatchIngredientInput[];
+}
+
+/** Batch scaling. scaled_amount = amount * (target_servings / base_servings). Precision: 2dp. */
+export function scaleBatch({ baseServings, targetServings, ingredients }: ScaleBatchInput): BatchIngredientResult[] {
   if (!(baseServings > 0) || !(targetServings > 0)) {
     throw new CalculationError('Servings must be greater than zero');
   }
@@ -29,7 +31,7 @@ function scaleBatch({ baseServings, targetServings, ingredients }) {
     throw new CalculationError('Add at least one ingredient');
   }
   const factor = targetServings / baseServings;
-  return ingredients.map((ing) => {
+  return ingredients.map((ing): BatchIngredientResult => {
     const amount = Number(ing.amount);
     if (!Number.isFinite(amount) || amount < 0) {
       // Stage 4 §10: invalid rows are skipped with a per-row error, not a full-form failure.
@@ -39,14 +41,18 @@ function scaleBatch({ baseServings, targetServings, ingredients }) {
   });
 }
 
+interface CalculateAbvInput {
+  ingredients: AbvIngredientInput[];
+  dilution?: number;
+}
+
 /**
  * ABV / Proof. total_alcohol = sum(volume_i * abv_i/100)
  * final_abv = total_alcohol / (sum(volume_i) + dilution) * 100; proof = final_abv * 2
- * Precision: ABV/proof 1 decimal, volume 2 decimals (Stage 4 §10).
- * Assumption (documented, not silent): volumes are additive, no density/mixing-loss accounting -
- * standard bar-industry practice per Stage 4 §10.
+ * Precision: ABV/proof 1dp, volume 2dp. Assumption (documented, not silent): volumes are
+ * additive, no density/mixing-loss accounting - standard bar-industry practice per Stage 4 §10.
  */
-function calculateAbv({ ingredients, dilution = 0 }) {
+export function calculateAbv({ ingredients, dilution = 0 }: CalculateAbvInput): AbvResult {
   if (!Array.isArray(ingredients) || ingredients.length === 0) {
     throw new CalculationError('Add at least one ingredient');
   }
@@ -74,10 +80,8 @@ function calculateAbv({ ingredients, dilution = 0 }) {
   };
 }
 
-/**
- * Unit conversion. Fixed milliliter-based lookup table (Stage 4 §10). Precision: 3 decimals.
- */
-const ML_PER_UNIT = Object.freeze({
+/** Fixed milliliter-based lookup table (Stage 4 §10). Precision: 3dp. */
+export const ML_PER_UNIT: Readonly<Record<VolumeUnit, number>> = Object.freeze({
   oz: 29.5735,
   ml: 1,
   cl: 10,
@@ -87,23 +91,32 @@ const ML_PER_UNIT = Object.freeze({
   l: 1000,
 });
 
-function convertUnit({ amount, fromUnit, toUnit }) {
+interface ConvertUnitInput {
+  amount: number | string;
+  fromUnit: string;
+  toUnit: string;
+}
+
+function isVolumeUnit(unit: string): unit is VolumeUnit {
+  return unit in ML_PER_UNIT;
+}
+
+export function convertUnit({ amount, fromUnit, toUnit }: ConvertUnitInput): number {
   const value = Number(amount);
   if (!Number.isFinite(value) || value < 0) throw new CalculationError('Amount must be a non-negative number');
-  if (!(fromUnit in ML_PER_UNIT)) throw new CalculationError(`Unknown unit: ${fromUnit}`);
-  if (!(toUnit in ML_PER_UNIT)) throw new CalculationError(`Unknown unit: ${toUnit}`);
+  if (!isVolumeUnit(fromUnit)) throw new CalculationError(`Unknown unit: ${fromUnit}`);
+  if (!isVolumeUnit(toUnit)) throw new CalculationError(`Unknown unit: ${toUnit}`);
   const ml = value * ML_PER_UNIT[fromUnit];
   const result = ml / ML_PER_UNIT[toUnit];
   return round(result, 3);
 }
 
-const StationCalculations = { CalculationError, scaleBatch, calculateAbv, convertUnit, ML_PER_UNIT, round };
+export { round };
 
 // UMD-style dual export: Node (require) and browser (<script> tag) load the exact same
 // implementation - Stage 9 §1 forbids a second, duplicated client-side copy of these formulas.
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = StationCalculations;
-}
+// This mirrors what the pre-migration JS version did; carried forward deliberately, not dropped.
+declare const window: (Window & { STATION_CALC?: unknown }) | undefined;
 if (typeof window !== 'undefined') {
-  window.STATION_CALC = StationCalculations;
+  window.STATION_CALC = { CalculationError, scaleBatch, calculateAbv, convertUnit, ML_PER_UNIT, round };
 }

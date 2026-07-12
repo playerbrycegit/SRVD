@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isRateLimited, clearAll } = require('../src/http/rate-limit');
+const { isRateLimited, clearAll } = require('../dist/src/http/rate-limit');
 
 test('rate-limit: allows requests under the threshold', () => {
   clearAll();

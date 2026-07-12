@@ -1,9 +1,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createDb, runMigrations } = require('../src/shared-kernel/db');
-const { AuthService } = require('../src/modules/auth/service');
-const { RecipesService } = require('../src/modules/recipes/service');
+const { createDb, runMigrations } = require('../dist/src/shared-kernel/data-access');
+const { AuthService } = require('../dist/src/modules/auth/service');
+const { RecipesService } = require('../dist/src/modules/recipes/service');
 
 function setup() {
   const db = createDb(':memory:');
@@ -38,16 +38,16 @@ test('recipes: create and read back with ingredients in order', () => {
 test('recipes: creation is transactional - a rejected recipe leaves no orphaned ingredient rows', () => {
   const { db, recipes, userA } = setup();
   assert.throws(() => recipes.createRecipe(userA.id, { name: '', category: 'Classic', ingredients: [{ ingredient_name: 'Gin' }] }));
-  const count = db.prepare('SELECT COUNT(*) as c FROM recipe_ingredients').get().c;
+  const count = db.get('SELECT COUNT(*) as c FROM recipe_ingredients').c;
   assert.equal(count, 0);
 });
 
 test('recipes: delete cascades to recipe_ingredients (composition, Stage 4 §5)', () => {
   const { db, recipes, userA } = setup();
   const r = recipes.createRecipe(userA.id, blackWolf);
-  assert.equal(db.prepare('SELECT COUNT(*) as c FROM recipe_ingredients WHERE recipe_id = ?').get(r.id).c, 4);
+  assert.equal(db.get('SELECT COUNT(*) as c FROM recipe_ingredients WHERE recipe_id = ?', [r.id]).c, 4);
   recipes.deleteRecipe(userA.id, r.id);
-  assert.equal(db.prepare('SELECT COUNT(*) as c FROM recipe_ingredients WHERE recipe_id = ?').get(r.id).c, 0);
+  assert.equal(db.get('SELECT COUNT(*) as c FROM recipe_ingredients WHERE recipe_id = ?', [r.id]).c, 0);
 });
 
 test('search: name match works', () => {

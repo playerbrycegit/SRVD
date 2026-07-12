@@ -1,9 +1,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createDb, runMigrations } = require('../src/shared-kernel/db');
-const { AuthService } = require('../src/modules/auth/service');
-const { ShiftsService } = require('../src/modules/shifts/service');
+const { createDb, runMigrations } = require('../dist/src/shared-kernel/data-access');
+const { AuthService } = require('../dist/src/modules/auth/service');
+const { ShiftsService } = require('../dist/src/modules/shifts/service');
 
 function setup() {
   const db = createDb(':memory:');

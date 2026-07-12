@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { scaleBatch, calculateAbv, convertUnit, CalculationError } = require('../src/shared-kernel/calculations');
+const { scaleBatch, calculateAbv, convertUnit, CalculationError } = require('../dist/src/shared-kernel/calculations');
 
 // ---------- Batch scaling ----------
 test('batch: scales up correctly', () => {

@@ -1,11 +1,11 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createDb, runMigrations } = require('../src/shared-kernel/db');
-const { writeAudit, AUDITABLE_ACTIONS } = require('../src/shared-kernel/audit');
-const { AuthService } = require('../src/modules/auth/service');
-const { RecipesService } = require('../src/modules/recipes/service');
-const { ShiftsService } = require('../src/modules/shifts/service');
+const { createDb, runMigrations } = require('../dist/src/shared-kernel/data-access');
+const { writeAudit, AUDITABLE_ACTIONS } = require('../dist/src/shared-kernel/audit');
+const { AuthService } = require('../dist/src/modules/auth/service');
+const { RecipesService } = require('../dist/src/modules/recipes/service');
+const { ShiftsService } = require('../dist/src/modules/shifts/service');
 
 function freshDb() {
   const db = createDb(':memory:');
@@ -27,7 +27,7 @@ test('audit: recipe deletion writes an audit_log entry (Stage 4 §18)', () => {
     name: 'Test', category: 'Classic', ingredients: [{ ingredient_name: 'Gin' }],
   });
   recipes.deleteRecipe(user.id, r.id);
-  const entry = db.prepare("SELECT * FROM audit_log WHERE action = 'recipe_deleted' AND resource_id = ?").get(r.id);
+  const entry = db.get("SELECT * FROM audit_log WHERE action = 'recipe_deleted' AND resource_id = ?", [r.id]);
   assert.ok(entry);
 });
 
@@ -38,7 +38,7 @@ test('audit: shift deletion writes an audit_log entry (Stage 4 §18)', () => {
   const user = auth.register({ email: 'a@example.com', password: 'password123' });
   const s = shifts.logShift(user.id, { shift_date: '2026-07-10', cash_tips: 50, card_tips: 0 });
   shifts.deleteShift(user.id, s.id);
-  const entry = db.prepare("SELECT * FROM audit_log WHERE action = 'shift_deleted' AND resource_id = ?").get(s.id);
+  const entry = db.get("SELECT * FROM audit_log WHERE action = 'shift_deleted' AND resource_id = ?", [s.id]);
   assert.ok(entry);
 });
 
@@ -50,7 +50,7 @@ test('audit: a failed delete (wrong owner) does NOT write an audit entry - only 
   const userB = auth.register({ email: 'b@example.com', password: 'password123' });
   const s = shifts.logShift(userA.id, { shift_date: '2026-07-10', cash_tips: 50, card_tips: 0 });
   shifts.deleteShift(userB.id, s.id); // no-op, wrong owner
-  const count = db.prepare("SELECT COUNT(*) as c FROM audit_log WHERE action = 'shift_deleted'").get().c;
+  const count = db.get("SELECT COUNT(*) as c FROM audit_log WHERE action = 'shift_deleted'").c;
   assert.equal(count, 0);
 });
 

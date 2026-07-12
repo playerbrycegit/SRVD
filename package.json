@@ -1,25 +1,27 @@
 {
   "name": "station",
-  "version": "0.1.0-alpha",
-  "description": "STATION — professional operating system for bartenders. V1 scope: Auth, Home, Tools, Vault.",
+  "version": "0.2.0-alpha",
+  "description": "STATION — professional operating system for bartenders. V1 scope: Auth, Home, Tools, Vault. TypeScript, strict mode.",
   "private": true,
   "scripts": {
-    "migrate": "node -e \"const {createDb,runMigrations}=require('./src/shared-kernel/db');const db=createDb();console.log(runMigrations(db));\"",
-    "server": "node scripts/dev-server.js",
-    "web": "node -e \"require('./src/http/static-server').createStaticServer().listen(8080,()=>console.log('STATION web app at http://localhost:8080'))\"",
-    "test": "node --test test/*.test.js"
+    "build": "tsc -p .",
+    "migrate": "npm run build && node -e \"const {createDb,runMigrations}=require('./dist/src/shared-kernel/data-access');const db=createDb();console.log(runMigrations(db));\"",
+    "server": "npm run build && node dist/scripts/dev-server.js",
+    "web": "npm run build && node -e \"require('./dist/src/http/static-server').createStaticServer().listen(process.env.WEB_PORT||4002,()=>console.log('STATION web app listening'))\"",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "npm run build && node --test test/*.test.js"
   },
   "engines": {
     "node": ">=22.5.0"
   },
   "_notes": {
-    "runtime": "This package.json declares zero dependencies on purpose. Everything currently runs on Node built-ins only (node:sqlite, node:test, node:http) because this repo was bootstrapped in a network-isolated sandbox — see README 'Sandbox Substitution' for the full explanation and the swap-in path to the originally-approved stack below.",
+    "runtime": "TypeScript, strict mode, compiled via tsc to dist/. Runtime deps are still zero external packages - node:sqlite, node:test, node:http are Node built-ins. TypeScript itself (tsc/@types/node/undici-types) is available globally in this sandbox and vendored into node_modules/ for this project's use, not installed via npm (no network access - see README).",
+    "postgres_status": "NOT executed. db/postgres-migrations/all_tables.sql is written in correct syntax but has never run against a real Postgres server, none exists in this sandbox. src/shared-kernel/data-access.postgres.reference.ts documents exactly what's needed to complete this (a real pg install, and converting the Database interface to async).",
     "intended_production_stack": {
-      "database": "PostgreSQL (replaces node:sqlite — see src/shared-kernel/db.js)",
-      "http_framework": "Fastify-class framework (replaces src/http/server.js's raw node:http routing)",
-      "orm": "Schema-first TypeScript ORM (e.g. Prisma-class tooling)",
-      "validation": "Same shared-schema approach already implemented in src/shared-kernel/validation — portable as-is",
-      "test_runner": "node:test is a legitimate long-term choice and does not need replacing"
+      "database": "PostgreSQL (db/postgres-migrations has the translated schema; data-access.ts's Database interface needs to become async first - see data-access.postgres.reference.ts)",
+      "http_framework": "Fastify-class framework (replaces src/http/server.ts's raw node:http routing)",
+      "validation": "Already portable as-is - src/shared-kernel/validation",
+      "test_runner": "node:test is a legitimate long-term choice"
     }
   }
 }
