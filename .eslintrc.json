@@ -1,0 +1,13 @@
+{
+  "_note": "Written per Stage 9 §1-4 coding standards. Not executable in this sandbox - no network access to install eslint. Rules below reflect what Stage 9 already mandates by hand-review; installing eslint in a networked environment should enforce them automatically instead.",
+  "env": { "node": true, "browser": true, "es2022": true },
+  "parserOptions": { "ecmaVersion": 2022, "sourceType": "script" },
+  "rules": {
+    "no-console": ["warn", { "allow": ["error"] }],
+    "no-eval": "error",
+    "no-unused-vars": "warn",
+    "eqeqeq": ["error", "always"],
+    "no-var": "error",
+    "prefer-const": "error"
+  }
+}

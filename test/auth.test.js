@@ -1,0 +1,125 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { createDb, runMigrations } = require('../src/shared-kernel/db');
+const { AuthService } = require('../src/modules/auth/service');
+const { ValidationError } = require('../src/shared-kernel/validation');
+
+function freshDb() {
+  const db = createDb(':memory:');
+  runMigrations(db);
+  return db;
+}
+
+test('register: creates a user and returns id+email', () => {
+  const auth = new AuthService(freshDb());
+  const result = auth.register({ email: 'Test@Example.com', password: 'password123' });
+  assert.ok(result.id);
+  assert.equal(result.email, 'test@example.com'); // normalized lowercase
+});
+
+test('register: duplicate email is rejected (case-insensitive)', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'test@example.com', password: 'password123' });
+  assert.throws(() => auth.register({ email: 'TEST@EXAMPLE.COM', password: 'anotherpass' }), /already exists/);
+});
+
+test('register: password is never stored in plaintext', () => {
+  const db = freshDb();
+  const auth = new AuthService(db);
+  auth.register({ email: 'test@example.com', password: 'password123' });
+  const row = db.prepare('SELECT password_hash FROM users').get();
+  assert.ok(!row.password_hash.includes('password123'));
+  assert.match(row.password_hash, /^[a-f0-9]+:[a-f0-9]+$/); // salt:hash format
+});
+
+test('login: correct credentials succeed and issue a session token', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'test@example.com', password: 'password123' });
+  const result = auth.login({ email: 'test@example.com', password: 'password123' });
+  assert.ok(result.token);
+  assert.ok(result.expiresAt > Date.now());
+});
+
+test('login: wrong password fails with a vague error (no enumeration signal)', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'test@example.com', password: 'password123' });
+  assert.throws(() => auth.login({ email: 'test@example.com', password: 'wrongpassword' }), /Incorrect email or password/);
+});
+
+test('login: nonexistent email fails with the SAME error message as wrong password (Stage 7 anti-enumeration rule)', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'real@example.com', password: 'password123' });
+  let errA, errB;
+  try { auth.login({ email: 'doesnotexist@example.com', password: 'anything' }); } catch (e) { errA = e.message; }
+  try { auth.login({ email: 'real@example.com', password: 'wrongpassword' }); } catch (e) { errB = e.message; }
+  assert.equal(errA, errB);
+});
+
+test('session: a valid token verifies to the correct userId', () => {
+  const auth = new AuthService(freshDb());
+  const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
+  const { token } = auth.login({ email: 'test@example.com', password: 'password123' });
+  assert.equal(auth.verifySession(token), id);
+});
+
+test('session: an invalid/random token verifies to null', () => {
+  const auth = new AuthService(freshDb());
+  assert.equal(auth.verifySession('not-a-real-token'), null);
+});
+
+test('session: a revoked token (logout) no longer verifies', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'test@example.com', password: 'password123' });
+  const { token } = auth.login({ email: 'test@example.com', password: 'password123' });
+  assert.ok(auth.verifySession(token));
+  auth.logout(token);
+  assert.equal(auth.verifySession(token), null);
+});
+
+test('session: multi-device — logging in twice creates two independently-revocable sessions', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'test@example.com', password: 'password123' });
+  const s1 = auth.login({ email: 'test@example.com', password: 'password123', deviceLabel: 'iPhone' });
+  const s2 = auth.login({ email: 'test@example.com', password: 'password123', deviceLabel: 'Desktop' });
+  auth.logout(s1.token);
+  assert.equal(auth.verifySession(s1.token), null);
+  assert.ok(auth.verifySession(s2.token)); // second device unaffected (Stage 4 §6 multi-device support)
+});
+
+test('account deletion: requires correct password re-authentication', () => {
+  const auth = new AuthService(freshDb());
+  const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
+  assert.throws(() => auth.deleteAccount({ userId: id, password: 'wrongpassword' }), /Incorrect password/);
+});
+
+test('account deletion: cascades to sessions (foreign key ON DELETE CASCADE)', () => {
+  const db = freshDb();
+  const auth = new AuthService(db);
+  const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
+  auth.login({ email: 'test@example.com', password: 'password123' });
+  assert.equal(db.prepare('SELECT COUNT(*) as c FROM sessions WHERE user_id = ?').get(id).c, 1);
+  auth.deleteAccount({ userId: id, password: 'password123' });
+  assert.equal(db.prepare('SELECT COUNT(*) as c FROM sessions WHERE user_id = ?').get(id).c, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) as c FROM users WHERE id = ?').get(id).c, 0);
+});
+
+test('account deletion: writes an audit_log entry that survives the user row being gone (nullable FK)', () => {
+  const db = freshDb();
+  const auth = new AuthService(db);
+  const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
+  auth.deleteAccount({ userId: id, password: 'password123' });
+  const entry = db.prepare("SELECT * FROM audit_log WHERE action = 'account_deleted' AND resource_id = ?").get(id);
+  assert.ok(entry, 'audit entry should exist even though the user row is gone');
+  assert.equal(entry.user_id, null); // ON DELETE SET NULL per migration 008
+});
+
+test('validation: weak password rejected at registration', () => {
+  const auth = new AuthService(freshDb());
+  assert.throws(() => auth.register({ email: 'test@example.com', password: 'short' }), ValidationError);
+});
+
+test('validation: malformed email rejected at registration', () => {
+  const auth = new AuthService(freshDb());
+  assert.throws(() => auth.register({ email: 'not-an-email', password: 'password123' }), ValidationError);
+});

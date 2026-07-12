@@ -1,0 +1,91 @@
+/* Design tokens — Stage 5 §2/§20 verbatim. This is the single source of every color/type/spacing
+   value in the app; no component below should hardcode a raw hex/px value outside this file. */
+:root {
+  /* Color (Stage 5 §2) */
+  --bg: #0B0B0D;
+  --surface: #151519;
+  --surface-2: #1C1C21;
+  --border: #2A2A30;
+  --border-2: #34343B;
+  --gold: #C9A961;
+  --gold-dim: #8A7440;
+  --silver: #AEB2B9;
+  --text: #F2F1ED;
+  --text-dim: #8C8C93;
+  --text-faint: #5C5C63;
+  --danger: #C1584B;
+  --success: #7FA582;
+
+  /* Spacing (Stage 5 §4) — 4px base scale */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+
+  /* Radius / border (Stage 5 §8) */
+  --radius-default: 2px;
+  --border-width-default: 1px;
+  --border-width-focus: 2px;
+
+  /* Motion (Stage 5 §12) — reduced-motion handled below, not per-component */
+  --motion-fast: 150ms ease;
+  --motion-base: 250ms ease;
+  --motion-toast: 250ms ease;
+  --motion-bar: 300ms ease;
+
+  /* Layout (Stage 5 §5) */
+  --container-max: 1040px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-fast: 1ms; --motion-base: 1ms; --motion-toast: 1ms; --motion-bar: 1ms; }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: var(--bg); color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+.mono { font-family: 'Space Mono', monospace; }
+.display { font-family: 'Fraunces', serif; }
+
+/* Universal focus ring (Stage 5 §8/§17 — implemented once, globally, never per-component) */
+:focus-visible {
+  outline: var(--border-width-focus) solid var(--gold);
+  outline-offset: 2px;
+}
+
+button {
+  font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 1.5px;
+  text-transform: uppercase; font-weight: 700; cursor: pointer;
+  border-radius: var(--radius-default); border: none;
+  padding: 11px 20px; min-height: 44px; /* Stage 6 §15 closed touch-target gap */
+  transition: opacity var(--motion-fast);
+}
+button.primary { background: var(--gold); color: #0B0B0D; }
+button.primary:hover { opacity: 0.85; }
+button.primary:active { opacity: 0.70; }
+button.ghost { background: none; border: var(--border-width-default) solid var(--border-2); color: var(--text-dim); }
+button.ghost:hover { color: var(--text); border-color: var(--gold-dim); }
+button.danger { background: none; border: var(--border-width-default) solid var(--danger); color: var(--danger); }
+button:disabled { color: var(--text-faint); background: var(--surface-2); cursor: not-allowed; opacity: 1; }
+
+label {
+  display: block; font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--text-dim); margin-bottom: var(--space-2);
+}
+input, select, textarea {
+  width: 100%; background: var(--surface-2); border: var(--border-width-default) solid var(--border-2);
+  color: var(--text); padding: 10px 12px; font-family: 'Inter', sans-serif; font-size: 14px;
+  border-radius: var(--radius-default); outline: none; transition: border-color var(--motion-fast);
+}
+input:focus, select:focus, textarea:focus { border-color: var(--gold-dim); }
+.field { margin-bottom: var(--space-4); }
+
+.card {
+  background: var(--surface); border: var(--border-width-default) solid var(--border);
+  border-radius: var(--radius-default); padding: var(--space-6);
+}
+
+[role="alert"], .error-text { color: var(--danger); font-size: 13px; margin-top: var(--space-2); }
+[role="status"] { color: var(--text-dim); font-size: 13px; }
