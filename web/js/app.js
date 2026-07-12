@@ -22,12 +22,13 @@ function route(path, handler) { routes[path] = handler; }
 function navigate(path) { window.location.hash = path; }
 async function render() {
   const hash = window.location.hash.slice(1) || '/';
+  const path = hash.split('?')[0];
   const authed = api.isAuthenticated();
-  const publicPaths = ['/', '/login', '/register'];
-  if (!authed && !publicPaths.includes(hash)) return navigate('/');
-  if (authed && publicPaths.includes(hash)) return navigate('/home');
+  const publicPaths = ['/', '/login', '/register', '/verify', '/forgot-password', '/reset-password'];
+  if (!authed && !publicPaths.includes(path)) return navigate('/');
+  if (authed && ['/', '/login', '/register'].includes(path)) return navigate('/home');
 
-  const handler = routes[hash.split('?')[0]] || routes['/404'];
+  const handler = routes[path] || routes['/404'];
   app.innerHTML = '';
   try {
     const view = await handler();
@@ -91,7 +92,10 @@ route('/login', () => {
       <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username"></div>
       <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password"></div>
       <button class="primary" id="submit" style="width:100%;">Log In</button>
-      <p style="text-align:center;margin-top:20px;color:var(--text-dim);font-size:13px;">
+      <p style="text-align:center;margin-top:16px;">
+        <a href="#/forgot-password" style="color:var(--text-dim);font-size:12px;">Forgot password?</a>
+      </p>
+      <p style="text-align:center;margin-top:12px;color:var(--text-dim);font-size:13px;">
         Don't have an account? <a href="#/register" style="color:var(--gold);">Create account</a>
       </p>
     </div>
@@ -126,15 +130,96 @@ route('/register', () => {
     const email = view.querySelector('#email').value;
     const password = view.querySelector('#password').value;
     try {
-      await api.register(email, password);
-      // Note: Stage 4 §6 specifies email-verification-gated access; this build logs the user in
-      // immediately after registration since no email delivery infra exists in this sandbox -
-      // a stated simplification, not a silent omission (see README "Known Limitations").
-      await api.login(email, password);
-      navigate('/home');
+      const result = await api.register(email, password);
+      // SANDBOX NOTE: no email delivery infrastructure exists here, so the verification token
+      // is passed through the URL as a stand-in for "the link in your email" - clearly labeled,
+      // not hidden. A real deployment would email this link and never expose the token client-side.
+      navigate(`/verify?token=${encodeURIComponent(result._devOnly.verificationToken)}&email=${encodeURIComponent(email)}`);
     } catch (err) {
       view.querySelector('#err').textContent = err.message;
     }
+  });
+  return view;
+});
+
+route('/verify', () => {
+  const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const token = params.get('token');
+  const email = params.get('email');
+  const view = h(`
+    <div style="max-width:360px;margin:80px auto;text-align:center;">
+      <div class="display" style="font-size:26px;margin-bottom:16px;">Verify Your Email</div>
+      <p style="color:var(--text-dim);margin-bottom:8px;">Account created for <strong style="color:var(--text);">${email || ''}</strong>.</p>
+      <p style="color:var(--text-faint);font-size:12px;margin-bottom:24px;">
+        No email delivery is configured in this environment — in production this step happens by
+        clicking a link sent to your inbox. Here, tap below to simulate that click.
+      </p>
+      <div id="err" role="alert" class="error-text"></div>
+      <button class="primary" id="verify-btn" style="width:100%;">Verify Email & Continue</button>
+    </div>
+  `);
+  view.querySelector('#verify-btn').addEventListener('click', async () => {
+    try {
+      await api.verifyEmail(token);
+      toast('Email verified');
+      navigate('/login');
+    } catch (err) {
+      view.querySelector('#err').textContent = err.message;
+    }
+  });
+  return view;
+});
+
+route('/forgot-password', () => {
+  const view = h(`
+    <div style="max-width:360px;margin:80px auto;">
+      <div class="display" style="font-size:26px;margin-bottom:24px;text-align:center;">Reset Password</div>
+      <div id="err" role="alert" class="error-text"></div>
+      <div id="form-wrap">
+        <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username"></div>
+        <button class="primary" id="submit" style="width:100%;">Send Reset Link</button>
+      </div>
+      <p style="text-align:center;margin-top:20px;">
+        <a href="#/login" style="color:var(--text-dim);font-size:12px;">Back to login</a>
+      </p>
+    </div>
+  `);
+  view.querySelector('#submit').addEventListener('click', async () => {
+    const email = view.querySelector('#email').value;
+    try {
+      const result = await api.requestPasswordReset(email);
+      const wrap = view.querySelector('#form-wrap');
+      if (result._devOnly.resetToken) {
+        // SANDBOX NOTE: same substitution as registration - no email delivery exists here, so the
+        // "link" is surfaced directly rather than emailed. See README "Sandbox Substitution".
+        wrap.innerHTML = `<p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">A reset link would be sent to your email. Simulating that click:</p>
+          <a href="#/reset-password?token=${encodeURIComponent(result._devOnly.resetToken)}" style="color:var(--gold);">Continue to reset your password</a>`;
+      } else {
+        wrap.innerHTML = `<p style="color:var(--text-dim);font-size:13px;">If an account exists for that email, a reset link is on its way.</p>`;
+      }
+    } catch (err) { view.querySelector('#err').textContent = err.message; }
+  });
+  return view;
+});
+
+route('/reset-password', () => {
+  const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const token = params.get('token');
+  const view = h(`
+    <div style="max-width:360px;margin:80px auto;">
+      <div class="display" style="font-size:26px;margin-bottom:24px;text-align:center;">New Password</div>
+      <div id="err" role="alert" class="error-text"></div>
+      <div class="field"><label for="password">New Password</label><input id="password" type="password" autocomplete="new-password"></div>
+      <button class="primary" id="submit" style="width:100%;">Reset Password</button>
+    </div>
+  `);
+  view.querySelector('#submit').addEventListener('click', async () => {
+    const newPassword = view.querySelector('#password').value;
+    try {
+      await api.resetPassword(token, newPassword);
+      toast('Password reset — log in with your new password');
+      navigate('/login');
+    } catch (err) { view.querySelector('#err').textContent = err.message; }
   });
   return view;
 });

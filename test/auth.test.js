@@ -123,3 +123,76 @@ test('validation: malformed email rejected at registration', () => {
   const auth = new AuthService(freshDb());
   assert.throws(() => auth.register({ email: 'not-an-email', password: 'password123' }), ValidationError);
 });
+
+test('verification: a fresh user is not verified by default', () => {
+  const auth = new AuthService(freshDb());
+  const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
+  assert.equal(auth.isEmailVerified(id), false);
+});
+
+test('verification: consuming a valid token marks the user verified', () => {
+  const auth = new AuthService(freshDb());
+  const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
+  const token = auth.issueVerificationToken(id);
+  auth.verifyEmail(token);
+  assert.equal(auth.isEmailVerified(id), true);
+});
+
+test('verification: an expired token is rejected', () => {
+  const db = freshDb();
+  const auth = new AuthService(db);
+  const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
+  const token = auth.issueVerificationToken(id);
+  // simulate expiry by backdating the row directly (no fake timers needed for this one check)
+  db.prepare('UPDATE verification_tokens SET expires_at = ? WHERE user_id = ?').run(Date.now() - 1000, id);
+  assert.throws(() => auth.verifyEmail(token), /invalid or has expired/);
+});
+
+test('verification: a token cannot be reused after being consumed', () => {
+  const auth = new AuthService(freshDb());
+  const { id } = auth.register({ email: 'test@example.com', password: 'password123' });
+  const token = auth.issueVerificationToken(id);
+  auth.verifyEmail(token);
+  assert.throws(() => auth.verifyEmail(token), /invalid or has expired/);
+});
+
+test('password reset: request returns null token for a nonexistent email (anti-enumeration)', () => {
+  const auth = new AuthService(freshDb());
+  const result = auth.requestPasswordReset('ghost@example.com');
+  assert.equal(result.token, null);
+  assert.equal(result.requested, true); // same shape regardless
+});
+
+test('password reset: request returns a real token for a real account', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'test@example.com', password: 'password123' });
+  const result = auth.requestPasswordReset('test@example.com');
+  assert.ok(result.token);
+});
+
+test('password reset: resetting changes the password and old credentials stop working', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'test@example.com', password: 'oldpassword1' });
+  const { token } = auth.requestPasswordReset('test@example.com');
+  auth.resetPassword({ token, newPassword: 'newpassword1' });
+  assert.throws(() => auth.login({ email: 'test@example.com', password: 'oldpassword1' }), /Incorrect email or password/);
+  const result = auth.login({ email: 'test@example.com', password: 'newpassword1' });
+  assert.ok(result.token);
+});
+
+test('password reset: rejects a weak new password', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'test@example.com', password: 'password123' });
+  const { token } = auth.requestPasswordReset('test@example.com');
+  assert.throws(() => auth.resetPassword({ token, newPassword: 'short' }), ValidationError);
+});
+
+test('password reset: revokes all existing sessions', () => {
+  const auth = new AuthService(freshDb());
+  auth.register({ email: 'test@example.com', password: 'oldpassword1' });
+  const { token: sessionToken } = auth.login({ email: 'test@example.com', password: 'oldpassword1' });
+  assert.ok(auth.verifySession(sessionToken));
+  const { token: resetToken } = auth.requestPasswordReset('test@example.com');
+  auth.resetPassword({ token: resetToken, newPassword: 'newpassword1' });
+  assert.equal(auth.verifySession(sessionToken), null);
+});

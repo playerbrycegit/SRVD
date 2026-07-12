@@ -27,12 +27,15 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
     err.status = res.status;
     throw err;
   }
-  return json.data;
+  return json.devOnly ? { ...json.data, _devOnly: json.devOnly } : json.data;
 }
 
 const api = {
   request: apiRequest,
   register: (email, password) => apiRequest('/auth/register', { method: 'POST', body: { email, password } }),
+  verifyEmail: (token) => apiRequest('/auth/verify-email', { method: 'POST', body: { token } }),
+  requestPasswordReset: (email) => apiRequest('/auth/request-password-reset', { method: 'POST', body: { email } }),
+  resetPassword: (token, newPassword) => apiRequest('/auth/reset-password', { method: 'POST', body: { token, newPassword } }),
   login: async (email, password) => {
     const data = await apiRequest('/auth/login', { method: 'POST', body: { email, password } });
     setToken(data.token);

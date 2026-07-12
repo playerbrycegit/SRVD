@@ -14,6 +14,7 @@ const { RecipesService } = require('../modules/recipes/service');
 const { ValidationError } = require('../shared-kernel/validation');
 const { CalculationError, scaleBatch, calculateAbv, convertUnit } = require('../shared-kernel/calculations');
 const { writeAudit } = require('../shared-kernel/audit');
+const { isRateLimited, AUTH_LIMIT, STANDARD_LIMIT } = require('./rate-limit');
 
 // Stage 9 §6: consistent error envelope, `field` only present for attributable errors.
 function sendJson(res, status, body) {
@@ -44,13 +45,43 @@ function createServer(db) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const clientIp = req.socket.remoteAddress || 'unknown';
+
+    // Stage 4 §17: rate limiting, tighter on auth endpoints (blunts credential stuffing / enumeration).
+    const isAuthRoute = url.pathname.startsWith('/auth/');
+    const limit = isAuthRoute ? AUTH_LIMIT : STANDARD_LIMIT;
+    const limitKey = `${clientIp}:${isAuthRoute ? 'auth' : 'standard'}`;
+    if (isRateLimited(limitKey, limit)) {
+      return sendError(res, 429, 'Too many requests — try again shortly', null);
+    }
 
     try {
       // ---------- Auth (no token required) ----------
       if (req.method === 'POST' && url.pathname === '/auth/register') {
         const body = await readJsonBody(req);
         const result = auth.register(body);
-        return sendJson(res, 201, { data: result });
+        const verificationToken = auth.issueVerificationToken(result.id);
+        // SANDBOX NOTE: no email delivery infra exists here — the token is returned directly
+        // rather than emailed. A real deployment sends this via an email template and never
+        // includes it in the HTTP response. See README "Sandbox Substitution".
+        return sendJson(res, 201, { data: result, devOnly: { verificationToken } });
+      }
+      if (req.method === 'POST' && url.pathname === '/auth/verify-email') {
+        const body = await readJsonBody(req);
+        const result = auth.verifyEmail(body.token);
+        return sendJson(res, 200, { data: result });
+      }
+      if (req.method === 'POST' && url.pathname === '/auth/request-password-reset') {
+        const body = await readJsonBody(req);
+        const result = auth.requestPasswordReset(body.email);
+        // Same shape returned whether or not the email exists (Stage 4 §6 anti-enumeration) —
+        // token is null in the no-such-account case, present (dev-mode only) otherwise.
+        return sendJson(res, 200, { data: { requested: true }, devOnly: { resetToken: result.token } });
+      }
+      if (req.method === 'POST' && url.pathname === '/auth/reset-password') {
+        const body = await readJsonBody(req);
+        const result = auth.resetPassword({ token: body.token, newPassword: body.newPassword });
+        return sendJson(res, 200, { data: result });
       }
       if (req.method === 'POST' && url.pathname === '/auth/login') {
         const body = await readJsonBody(req);
@@ -81,6 +112,7 @@ function createServer(db) {
 
       // ---------- Shifts ----------
       if (req.method === 'POST' && url.pathname === '/shifts') {
+        if (!auth.isEmailVerified(userId)) return sendError(res, 403, 'Verify your email before logging a shift', null);
         const body = await readJsonBody(req);
         return sendJson(res, 201, { data: shifts.logShift(userId, body) });
       }
@@ -105,6 +137,7 @@ function createServer(db) {
 
       // ---------- Recipes ----------
       if (req.method === 'POST' && url.pathname === '/recipes') {
+        if (!auth.isEmailVerified(userId)) return sendError(res, 403, 'Verify your email before creating a recipe', null);
         const body = await readJsonBody(req);
         return sendJson(res, 201, { data: recipes.createRecipe(userId, body) });
       }

@@ -38,33 +38,43 @@ foundation was built using only Node's built-in modules:
 Every test in `/test` actually runs and actually passes in this sandbox — nothing here is a
 fabricated result.
 
-## What's actually built and tested (91/91 passing)
+## What's actually built and tested (112/112 passing)
 
 - **Auth**: registration, login (with anti-enumeration error messaging), multi-device sessions,
   logout, account deletion with re-authentication and full cascading delete, audit logging.
+- **Email verification**: real, single-use, time-limited (24h), hashed-at-rest tokens. Shift and
+  recipe *creation* are gated behind a verified email (Stage 4 §6) — verified live: an unverified
+  user gets a 403, the same user succeeds immediately after verifying.
+- **Password reset**: real, single-use, time-limited (1h) tokens; anti-enumeration (same response
+  shape whether or not the email exists); resetting a password revokes every existing session, so
+  a stolen session token can't survive a reset — verified live against a running server.
+- **Rate limiting**: in-memory sliding window, 10 req/min on `/auth/*`, 120 req/min elsewhere
+  (Stage 4 §17) — verified live: the 5th rapid login attempt in a minute returns 429.
 - **Shifts**: log/list/delete, lifetime/avg/best stats, one-goal-per-user with 7-day rolling
   progress — all ownership-scoped.
 - **Recipes**: create/list/search/filter/delete with composed ingredients, transactional creation,
   cascading delete — all ownership-scoped.
-- **Tools**: batch scaling, ABV/proof, unit conversion — pure, stateless, exhaustively tested
-  (26 tests alone, including zero-servings, 100%-ABV, and round-trip-conversion edge cases).
-- **Shared Kernel**: single validation library, single calculation engine, single audit writer —
-  no duplicated logic between modules (this was actually caught and fixed once during this build:
-  audit-logging started out duplicated inside `auth/service.js` and was refactored into
-  `shared-kernel/audit` before this note was written).
+- **Tools**: batch scaling, ABV/proof, unit conversion — pure, stateless, exhaustively tested.
+- **Shared Kernel**: single validation library, single calculation engine, single audit writer,
+  single rate limiter — no duplicated logic between modules.
 - **HTTP layer**: every protected route enforces auth; ownership scoping is verified with real
-  cross-user bypass attempts, including one live end-to-end test that registers two users and
-  confirms user B gets a 404 (not a 403 — doesn't even confirm the record exists) trying to read
-  user A's recipe.
-- **Frontend**: Welcome/Login/Register + the Home/Tools/Vault screens, matching Stage 5's design
-  tokens and Stage 7's screen specs, talking to the real API — no mock data.
+  cross-user bypass attempts (a live test registers two users and confirms user B gets a 404 —
+  not a 403, doesn't even confirm the record exists — trying to read user A's recipe).
+- **Frontend**: Welcome/Login/Register/Verify/Forgot-Password/Reset-Password + Home/Tools/Vault,
+  matching Stage 5's tokens and Stage 7's specs, talking to the real API — no mock data.
 
-## What's deliberately not here
+## Sandbox substitution — email delivery
 
-- **Password reset & email verification**: designed in Stage 4 §6, not implemented. Registration
-  currently logs the user in immediately rather than gating on a verification email, since no email
-  delivery infrastructure exists in this sandbox. This is a stated simplification, not silent.
-- **Onboarding, expanded profile fields (name/country/timezone/photo), Settings beyond nothing**:
+Stage 4 §6 assumes a real email provider. This sandbox has none (no SMTP, no network), so
+verification and password-reset tokens are returned directly in the API response under a
+clearly-labeled `devOnly` field, and the frontend surfaces them as an explicit "simulating that
+click" step rather than actually emailing anything. **This is the one place a real deployment
+must change before going live** — swap the `devOnly` token exposure in `src/http/server.js` for a
+call to an email provider, and delete the `devOnly` field entirely. Nothing else about the
+verification/reset logic needs to change; the token generation, hashing, expiry, and single-use
+enforcement in `src/modules/auth/service.js` are all production-shaped already.
+
+## What's deliberately still not here
   proposed in a later implementation prompt (Stage 12) that contradicted Stage 3's explicit
   "no forced onboarding" decision and Stage 4's approved `users` schema. Flagged, not built,
   pending a real product decision.

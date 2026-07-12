@@ -2,12 +2,12 @@
 /**
  * Auth module — service layer. Source of truth: Stage 4 §6 (Authentication), Stage 9 §8 (Security).
  *
- * Foundation-phase scope note: this implements real password hashing (scrypt, built into Node's
- * crypto module - no external dependency needed) and real session issuance/verification/revocation.
- * Full refresh-token rotation-on-use and short-lived-access-token/long-lived-refresh-token split
- * (Stage 4 §6) is represented in the schema (sessions.refresh_token_hash, expires_at) and in
- * `rotateSession`, but the Phase-7 hardening pass (rate limiting, replay-attack testing) is explicitly
- * NOT done here — this is foundation, not production-hardened auth. Documented in README "Remaining Work".
+ * Implements real password hashing (scrypt), session issuance/verification/revocation, email
+ * verification, and password reset — all with real, hashed, single-use, time-limited tokens.
+ * Rate limiting lives in src/http/rate-limit.js and is applied at the HTTP layer, not here.
+ * No email delivery infrastructure exists in this sandbox (no SMTP, no network) — verification
+ * and reset tokens are returned directly by the API in a clearly-labeled dev-mode field rather
+ * than emailed. See README "Sandbox Substitution" for the swap-in path to a real email provider.
  */
 const crypto = require('node:crypto');
 const { randomUUID } = crypto;
@@ -16,6 +16,8 @@ const { writeAudit } = require('../../shared-kernel/audit');
 
 const SCRYPT_KEYLEN = 64;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days, matches Stage 4 §6
+const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour, shorter than verification since it's higher-stakes
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -67,6 +69,80 @@ class AuthService {
 
     writeAudit(this.db, { userId: id, action: 'account_created', resourceType: 'users', resourceId: id });
     return { id, email: normalizedEmail };
+  }
+
+  /**
+   * Stage 4 §6: Email Verification. Sandbox note: no email delivery infrastructure exists here
+   * (no SMTP, no network), so the token is returned directly to the caller rather than emailed —
+   * server.js exposes this as a dev-mode response field, clearly labeled, not silently mailed.
+   * In production this return value goes to an email template, not the HTTP response.
+   */
+  issueVerificationToken(userId) {
+    return this._issueToken(userId, 'email_verify', VERIFY_TOKEN_TTL_MS);
+  }
+
+  verifyEmail(token) {
+    const record = this._consumeToken(token, 'email_verify');
+    if (!record) throw new ValidationError('This verification link is invalid or has expired', null);
+    this.db.prepare('UPDATE users SET email_verified_at = ? WHERE id = ?').run(Date.now(), record.user_id);
+    return { verified: true };
+  }
+
+  /** Stage 4 §6: gate — shift/recipe creation requires a verified email. Checked at the module
+   * boundary (server.js), not duplicated per-route. */
+  isEmailVerified(userId) {
+    const user = this.db.prepare('SELECT email_verified_at FROM users WHERE id = ?').get(userId);
+    return Boolean(user && user.email_verified_at);
+  }
+
+  /**
+   * Stage 4 §6: Password Reset. Deliberately returns the same shape whether or not the email
+   * exists (Stage 4 §6's anti-enumeration requirement) — the token itself is only generated for
+   * a real account, but the caller can't distinguish "sent" from "no such account" from the response.
+   */
+  requestPasswordReset(email) {
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const user = this.db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(normalizedEmail);
+    if (!user) return { requested: true, token: null }; // same shape, no token — nothing to email
+    const token = this._issueToken(user.id, 'password_reset', RESET_TOKEN_TTL_MS);
+    return { requested: true, token }; // sandbox note applies here too — see issueVerificationToken
+  }
+
+  resetPassword({ token, newPassword }) {
+    validatePassword(newPassword);
+    const record = this._consumeToken(token, 'password_reset');
+    if (!record) throw new ValidationError('This reset link is invalid or has expired', null);
+    this.db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+      .run(hashPassword(newPassword), Date.now(), record.user_id);
+    // Stage 4 §6: a password reset should not leave other sessions silently valid forever —
+    // revoke every existing session so a stolen device/token can't survive a reset.
+    this.db.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL')
+      .run(Date.now(), record.user_id);
+    writeAudit(this.db, { userId: record.user_id, action: 'password_reset', resourceType: 'users', resourceId: record.user_id });
+    return { reset: true };
+  }
+
+  _issueToken(userId, purpose, ttlMs) {
+    const token = crypto.randomBytes(32).toString('hex');
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO verification_tokens (id, user_id, token_hash, purpose, created_at, expires_at, used_at)
+      VALUES (?, ?, ?, ?, ?, ?, NULL)
+    `).run(randomUUID(), userId, hashToken(token), purpose, now, now + ttlMs);
+    return token;
+  }
+
+  /** Single-use: marks the token consumed atomically with the lookup so a token can't be replayed
+   * even if two requests race (Stage 9 §8 — never trust a check-then-act without atomicity). */
+  _consumeToken(token, purpose) {
+    if (!token) return null;
+    const tokenHash = hashToken(token);
+    const record = this.db.prepare(`
+      SELECT * FROM verification_tokens WHERE token_hash = ? AND purpose = ? AND used_at IS NULL
+    `).get(tokenHash, purpose);
+    if (!record || record.expires_at < Date.now()) return null;
+    this.db.prepare('UPDATE verification_tokens SET used_at = ? WHERE id = ?').run(Date.now(), record.id);
+    return record;
   }
 
   /** Stage 4 §6: Login. Deliberately vague error on failure (Stage 7's Login spec) — prevents
