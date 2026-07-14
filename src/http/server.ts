@@ -20,6 +20,7 @@ import { SettingsService } from '../modules/settings/service';
 import { ValidationError } from '../shared-kernel/validation';
 import { CalculationError, scaleBatch, calculateAbv, convertUnit } from '../shared-kernel/calculations';
 import { writeAudit } from '../shared-kernel/audit';
+import { ConsoleAnalytics, trackSafely } from '../shared-kernel/analytics';
 import { isRateLimited, AUTH_LIMIT, STANDARD_LIMIT, EXPORT_LIMIT } from './rate-limit';
 import type { Database } from '../shared-kernel/data-access';
 import type { AppConfig } from '../shared-kernel/env';
@@ -54,6 +55,7 @@ export function createServer(db: Database, config: Pick<AppConfig, 'allowDevToke
   const recipes = new RecipesService(db);
   const alpha = new AlphaService(db);
   const settings = new SettingsService(db);
+  const analytics = new ConsoleAnalytics();
 
   /** Only attaches devOnly data when config permits it — see file header. */
   function devOnly(payload: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -193,6 +195,15 @@ export function createServer(db: Database, config: Pick<AppConfig, 'allowDevToke
         const ok = shifts.deleteShift(authedUserId, id);
         return ok ? sendJson(res, 200, { data: { deleted: true } }) : sendError(res, 404, 'Shift not found', null);
       }
+      if (req.method === 'PATCH' && /^\/shifts\/[^/]+$/.test(url.pathname)) {
+        if (!auth.isEmailVerified(authedUserId)) return sendError(res, 403, 'Verify your email before editing a shift', null);
+        const id = url.pathname.split('/')[2] as string;
+        const body = await readJsonBody(req);
+        const updated = shifts.updateShift(authedUserId, id, body);
+        if (!updated) return sendError(res, 404, 'Shift not found', null);
+        trackSafely(analytics, { name: 'shift_edited', userId: authedUserId, timestamp: Date.now(), properties: {} });
+        return sendJson(res, 200, { data: updated });
+      }
       if (req.method === 'POST' && url.pathname === '/goals') {
         const body = await readJsonBody(req);
         return sendJson(res, 200, { data: shifts.setGoal(authedUserId, body) });
@@ -221,6 +232,18 @@ export function createServer(db: Database, config: Pick<AppConfig, 'allowDevToke
         const id = url.pathname.split('/')[2] as string;
         const ok = recipes.deleteRecipe(authedUserId, id);
         return ok ? sendJson(res, 200, { data: { deleted: true } }) : sendError(res, 404, 'Recipe not found', null);
+      }
+      if (req.method === 'PATCH' && /^\/recipes\/[^/]+$/.test(url.pathname)) {
+        if (!auth.isEmailVerified(authedUserId)) return sendError(res, 403, 'Verify your email before editing a recipe', null);
+        const id = url.pathname.split('/')[2] as string;
+        const body = await readJsonBody(req);
+        const updated = recipes.updateRecipe(authedUserId, id, body);
+        if (!updated) return sendError(res, 404, 'Recipe not found', null);
+        trackSafely(analytics, {
+          name: 'recipe_edited', userId: authedUserId, timestamp: Date.now(),
+          properties: { recipeCategory: updated.category, fieldCount: updated.ingredients.length },
+        });
+        return sendJson(res, 200, { data: updated });
       }
 
       // ---------- Tools (stateless, Shared Kernel calc engine, Stage 4 §16) ----------

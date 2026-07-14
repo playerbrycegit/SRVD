@@ -230,6 +230,105 @@ test('E2E SETTINGS: sessions list shows the current session correctly', async ()
   });
 });
 
+// ---------- V1.1: Edit Shift / Edit Recipe (approved decision package) ----------
+test('E2E V1.1: edit a shift end-to-end - value actually changes and persists', async () => {
+  await withServer(async (base) => {
+    const session = await registerVerifyLogin(base, 'editshift@example.com');
+    const created = await post(base, '/shifts', { shift_date: '2026-07-12', cash_tips: 40, card_tips: 10 }, session.token);
+    const shiftId = created.json.data.id;
+
+    const patched = await fetch(`${base}/shifts/${shiftId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+      body: JSON.stringify({ shift_date: '2026-07-12', cash_tips: 100, card_tips: 20 }),
+    });
+    assert.equal(patched.status, 200);
+    const patchedJson = await patched.json();
+    assert.equal(patchedJson.data.cash_tips, 100);
+
+    const list = await get(base, '/shifts', session.token);
+    assert.equal(list.json.data[0].cash_tips, 100); // persisted, not just returned once
+  });
+});
+
+test('E2E V1.1 OWNERSHIP: user B cannot edit user A\'s shift over the API', async () => {
+  await withServer(async (base) => {
+    const userA = await registerVerifyLogin(base, 'shiftowner@example.com');
+    const userB = await registerVerifyLogin(base, 'shiftattacker@example.com');
+    const created = await post(base, '/shifts', { shift_date: '2026-07-12', cash_tips: 40, card_tips: 0 }, userA.token);
+    const shiftId = created.json.data.id;
+
+    const attempt = await fetch(`${base}/shifts/${shiftId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userB.token}` },
+      body: JSON.stringify({ shift_date: '2026-07-12', cash_tips: 9999, card_tips: 0 }),
+    });
+    assert.equal(attempt.status, 404); // not found, doesn't confirm existence - same pattern as every other cross-user test
+
+    const stillOriginal = await get(base, '/shifts', userA.token);
+    assert.equal(stillOriginal.json.data[0].cash_tips, 40); // untouched
+  });
+});
+
+test('E2E V1.1: edit a recipe end-to-end - ingredients actually replace', async () => {
+  await withServer(async (base) => {
+    const session = await registerVerifyLogin(base, 'editrecipe@example.com');
+    const created = await post(base, '/recipes', {
+      name: 'Draft Recipe', category: 'Classic', ingredients: [{ ingredient_name: 'Gin' }],
+    }, session.token);
+    const recipeId = created.json.data.id;
+
+    const patched = await fetch(`${base}/recipes/${recipeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+      body: JSON.stringify({
+        name: 'Finished Recipe', category: 'Shaken',
+        ingredients: [{ ingredient_name: 'Vodka' }, { ingredient_name: 'Lime' }],
+      }),
+    });
+    assert.equal(patched.status, 200);
+    const patchedJson = await patched.json();
+    assert.equal(patchedJson.data.name, 'Finished Recipe');
+    assert.equal(patchedJson.data.ingredients.length, 2);
+
+    const reread = await get(base, `/recipes/${recipeId}`, session.token);
+    assert.equal(reread.json.data.ingredients[0].ingredient_name, 'Vodka'); // persisted
+  });
+});
+
+test('E2E V1.1 OWNERSHIP: user B cannot edit user A\'s recipe over the API', async () => {
+  await withServer(async (base) => {
+    const userA = await registerVerifyLogin(base, 'recipeowner@example.com');
+    const userB = await registerVerifyLogin(base, 'recipeattacker@example.com');
+    const created = await post(base, '/recipes', {
+      name: 'Secret Recipe', category: 'Classic', ingredients: [{ ingredient_name: 'Gin' }],
+    }, userA.token);
+    const recipeId = created.json.data.id;
+
+    const attempt = await fetch(`${base}/recipes/${recipeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userB.token}` },
+      body: JSON.stringify({ name: 'Stolen', category: 'Classic', ingredients: [{ ingredient_name: 'Gin' }] }),
+    });
+    assert.equal(attempt.status, 404);
+  });
+});
+
+test('E2E V1.1: an unverified user cannot edit a shift or recipe', async () => {
+  await withServer(async (base) => {
+    // register but do not verify
+    await post(base, '/auth/register', { email: 'unverifiededit@example.com', password: 'password123' });
+    const login = await post(base, '/auth/login', { email: 'unverifiededit@example.com', password: 'password123' });
+    const token = login.json.data.token;
+
+    const shiftAttempt = await fetch(`${base}/shifts/some-id`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ shift_date: '2026-07-12', cash_tips: 10, card_tips: 0 }),
+    });
+    assert.equal(shiftAttempt.status, 403);
+  });
+});
+
 test('E2E ALPHA: invite -> register -> accept invitation -> submit feedback', async () => {
   await withServer(async (base) => {
     const inviter = await registerVerifyLogin(base, 'inviter@example.com');

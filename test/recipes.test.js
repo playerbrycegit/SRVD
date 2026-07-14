@@ -87,3 +87,52 @@ test('OWNERSHIP: user B cannot delete user A\'s recipe', () => {
   assert.equal(recipes.deleteRecipe(userB.id, r.id), false);
   assert.ok(recipes.getRecipe(userA.id, r.id)); // still exists
 });
+
+// ---------- V1.1: Edit Recipe (approved decision package, Must-Have) ----------
+test('updateRecipe: successfully changes name and category', () => {
+  const { recipes, userA } = setup();
+  const r = recipes.createRecipe(userA.id, blackWolf);
+  const updated = recipes.updateRecipe(userA.id, r.id, { ...blackWolf, name: 'Black Wolf II', category: 'Built' });
+  assert.equal(updated.name, 'Black Wolf II');
+  assert.equal(updated.category, 'Built');
+});
+
+test('updateRecipe: replaces ingredients wholesale - add, remove, and reorder all work in one edit', () => {
+  const { db, recipes, userA } = setup();
+  const r = recipes.createRecipe(userA.id, blackWolf); // 4 ingredients
+  const updated = recipes.updateRecipe(userA.id, r.id, {
+    ...blackWolf,
+    ingredients: [
+      { ingredient_name: 'Rye', amount: '2', unit: 'oz' },      // replaces Bourbon, different name
+      { ingredient_name: 'New Ingredient', amount: '1', unit: 'oz' }, // net new
+    ],
+  });
+  assert.equal(updated.ingredients.length, 2);
+  assert.equal(updated.ingredients[0].ingredient_name, 'Rye');
+  assert.equal(updated.ingredients[1].ingredient_name, 'New Ingredient');
+  // old rows genuinely gone, not just unreferenced
+  const orphanCount = db.get('SELECT COUNT(*) as c FROM recipe_ingredients WHERE recipe_id = ?', [r.id]).c;
+  assert.equal(orphanCount, 2);
+});
+
+test('updateRecipe: invalid update (no ingredients) is rejected and leaves the original recipe untouched', () => {
+  const { recipes, userA } = setup();
+  const r = recipes.createRecipe(userA.id, blackWolf);
+  assert.throws(() => recipes.updateRecipe(userA.id, r.id, { ...blackWolf, ingredients: [] }));
+  const stillThere = recipes.getRecipe(userA.id, r.id);
+  assert.equal(stillThere.ingredients.length, 4); // unchanged - the failed update didn't corrupt it
+});
+
+test('OWNERSHIP: user B cannot update user A\'s recipe', () => {
+  const { recipes, userA, userB } = setup();
+  const r = recipes.createRecipe(userA.id, blackWolf);
+  const result = recipes.updateRecipe(userB.id, r.id, { ...blackWolf, name: 'Stolen' });
+  assert.equal(result, null);
+  assert.equal(recipes.getRecipe(userA.id, r.id).name, 'Black Wolf'); // unchanged
+});
+
+test('updateRecipe: returns null for a nonexistent recipe id', () => {
+  const { recipes, userA } = setup();
+  const result = recipes.updateRecipe(userA.id, 'not-a-real-id', blackWolf);
+  assert.equal(result, null);
+});

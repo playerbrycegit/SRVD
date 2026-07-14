@@ -94,3 +94,39 @@ test('goal progress: reflects only shifts within the rolling window and only the
   assert.equal(progress.current, 40);
   assert.equal(progress.percent, 40);
 });
+
+// ---------- V1.1: Edit Shift (approved decision package, Must-Have) ----------
+test('updateShift: successfully changes tip values', () => {
+  const { shifts, userA } = setup();
+  const s = shifts.logShift(userA.id, { shift_date: '2026-07-10', cash_tips: 50, card_tips: 0 });
+  const updated = shifts.updateShift(userA.id, s.id, { shift_date: '2026-07-10', cash_tips: 75, card_tips: 10 });
+  assert.equal(updated.cash_tips, 75);
+  assert.equal(updated.card_tips, 10);
+});
+
+test('updateShift: reuses the same validation as create - zero-tip update is rejected', () => {
+  const { shifts, userA } = setup();
+  const s = shifts.logShift(userA.id, { shift_date: '2026-07-10', cash_tips: 50, card_tips: 0 });
+  assert.throws(() => shifts.updateShift(userA.id, s.id, { shift_date: '2026-07-10', cash_tips: 0, card_tips: 0 }));
+});
+
+test('updateShift: updated_at changes on edit', () => {
+  const { shifts, userA } = setup();
+  const s = shifts.logShift(userA.id, { shift_date: '2026-07-10', cash_tips: 50, card_tips: 0 });
+  const updated = shifts.updateShift(userA.id, s.id, { shift_date: '2026-07-10', cash_tips: 60, card_tips: 0 });
+  assert.ok(updated.updated_at >= s.updated_at);
+});
+
+test('OWNERSHIP: user B cannot update user A\'s shift', () => {
+  const { shifts, userA, userB } = setup();
+  const s = shifts.logShift(userA.id, { shift_date: '2026-07-10', cash_tips: 50, card_tips: 0 });
+  const result = shifts.updateShift(userB.id, s.id, { shift_date: '2026-07-10', cash_tips: 9999, card_tips: 0 });
+  assert.equal(result, null);
+  assert.equal(shifts.getShift(userA.id, s.id).cash_tips, 50); // unchanged
+});
+
+test('updateShift: returns null for a nonexistent shift id', () => {
+  const { shifts, userA } = setup();
+  const result = shifts.updateShift(userA.id, 'not-a-real-id', { shift_date: '2026-07-10', cash_tips: 10, card_tips: 0 });
+  assert.equal(result, null);
+});

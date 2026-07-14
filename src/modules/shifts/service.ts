@@ -25,6 +25,24 @@ export class ShiftsService {
     return shift;
   }
 
+  /**
+   * V1.1 Must-Have (approved decision package §10, "Edit Shift"). Reuses `validateShift` exactly
+   * as-is — confirmed during Phase 1 review that it already operates correctly on a full
+   * replacement of the editable fields, so no new validation logic was needed, matching the
+   * decision package's stated assumption.
+   */
+  updateShift(userId: string, shiftId: string, input: Partial<ShiftInput>): ShiftRow | null {
+    const existing = this.getShift(userId, shiftId);
+    if (!existing) return null; // ownership-scoped: not found for this user, whether it exists for another user or not at all
+    const v = validateShift(input);
+    this.db.run(
+      `UPDATE shifts SET shift_date = ?, hours = ?, cash_tips = ?, card_tips = ?, notes = ?, updated_at = ?
+       WHERE id = ? AND user_id = ?`,
+      [v.shift_date, v.hours, v.cash_tips, v.card_tips, input.notes ?? existing.notes, Date.now(), shiftId, userId]
+    );
+    return this.getShift(userId, shiftId);
+  }
+
   /** Ownership-scoped by construction: user_id is always part of the WHERE clause. */
   getShift(userId: string, shiftId: string): ShiftRow | null {
     return this.db.get<ShiftRow>('SELECT * FROM shifts WHERE id = ? AND user_id = ?', [shiftId, userId]) ?? null;

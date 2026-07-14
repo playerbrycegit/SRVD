@@ -278,19 +278,55 @@ route('/home', async () => {
     const el = content.querySelector('#shift-list');
     if (list.length === 0) { el.innerHTML = `<div class="mono" style="text-align:center;padding:40px;color:var(--text-faint);font-size:11px;border:1px dashed var(--border);">No shifts logged yet. Log tonight's numbers above.</div>`; return; }
     el.innerHTML = list.map((s) => `
-      <div class="card" style="border-top:2px dashed var(--border-2);display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:14px 16px;">
-        <div><div class="mono" style="font-size:11px;color:var(--gold);">${s.shift_date}</div></div>
-        <div style="display:flex;align-items:center;gap:16px;">
-          <div style="text-align:right;">
-            <div class="display" style="font-size:20px;">${fmtMoney(s.cash_tips + s.card_tips)}</div>
-            <div class="mono" style="font-size:9px;color:var(--text-faint);">CASH ${fmtMoney(s.cash_tips)} · CARD ${fmtMoney(s.card_tips)}</div>
+      <div class="card" style="border-top:2px dashed var(--border-2);margin-bottom:10px;padding:14px 16px;" data-shift-row="${s.id}">
+        <div class="ticket-view" style="display:flex;justify-content:space-between;align-items:center;">
+          <div><div class="mono" style="font-size:11px;color:var(--gold);">${s.shift_date}</div></div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="text-align:right;">
+              <div class="display" style="font-size:20px;">${fmtMoney(s.cash_tips + s.card_tips)}</div>
+              <div class="mono" style="font-size:9px;color:var(--text-faint);">CASH ${fmtMoney(s.cash_tips)} · CARD ${fmtMoney(s.card_tips)}</div>
+            </div>
+            <button class="ghost" data-edit="${s.id}" aria-label="Edit shift" style="width:32px;height:36px;padding:0;">✎</button>
+            <button class="ghost" data-del="${s.id}" aria-label="Delete shift" style="width:32px;height:36px;padding:0;">×</button>
           </div>
-          <button class="ghost" data-del="${s.id}" aria-label="Delete shift" style="width:32px;height:36px;padding:0;">×</button>
+        </div>
+        <div class="ticket-edit" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed var(--border);">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div class="field"><label>Date</label><input type="date" class="e-date" value="${s.shift_date}"></div>
+            <div class="field"><label>Cash</label><input type="number" step="0.01" class="e-cash" value="${s.cash_tips}"></div>
+            <div class="field"><label>Card</label><input type="number" step="0.01" class="e-card" value="${s.card_tips}"></div>
+          </div>
+          <div class="error-text" role="alert" data-edit-err></div>
+          <div style="display:flex;gap:8px;">
+            <button class="primary" data-save="${s.id}">Save Changes</button>
+            <button class="ghost" data-cancel="${s.id}">Cancel</button>
+          </div>
         </div>
       </div>`).join('');
     el.querySelectorAll('[data-del]').forEach((btn) => btn.addEventListener('click', async () => {
       await api.deleteShift(btn.dataset.del);
       render();
+    }));
+    el.querySelectorAll('[data-edit]').forEach((btn) => btn.addEventListener('click', () => {
+      const row = el.querySelector(`[data-shift-row="${btn.dataset.edit}"]`);
+      row.querySelector('.ticket-view').style.display = 'none';
+      row.querySelector('.ticket-edit').style.display = 'block';
+    }));
+    el.querySelectorAll('[data-cancel]').forEach((btn) => btn.addEventListener('click', () => {
+      const row = el.querySelector(`[data-shift-row="${btn.dataset.cancel}"]`);
+      row.querySelector('.ticket-view').style.display = 'flex';
+      row.querySelector('.ticket-edit').style.display = 'none';
+    }));
+    el.querySelectorAll('[data-save]').forEach((btn) => btn.addEventListener('click', async () => {
+      const row = el.querySelector(`[data-shift-row="${btn.dataset.save}"]`);
+      const shift_date = row.querySelector('.e-date').value;
+      const cash_tips = parseFloat(row.querySelector('.e-cash').value) || 0;
+      const card_tips = parseFloat(row.querySelector('.e-card').value) || 0;
+      try {
+        await api.updateShift(btn.dataset.save, { shift_date, cash_tips, card_tips });
+        toast('Shift updated');
+        render();
+      } catch (err) { row.querySelector('[data-edit-err]').textContent = err.message; }
     }));
   }
   renderShiftList(shifts);
@@ -416,6 +452,8 @@ route('/tools', () => {
 // ---------------- Vault (Stage 4 §4/§11, Stage 7) ----------------
 route('/vault', async () => {
   const recipes = await api.listRecipes();
+  let editingId = null; // tracks whether the builder panel is in create or edit mode
+
   const content = h(`
     <div>
       <div class="mono" style="font-size:10px;letter-spacing:3px;color:var(--gold-dim);text-transform:uppercase;margin-bottom:8px;">The Craft</div>
@@ -426,7 +464,7 @@ route('/vault', async () => {
           <div id="v-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;"></div>
         </div>
         <div class="card">
-          <div class="mono" style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:18px;">New Recipe</div>
+          <div class="mono" id="builder-title" style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:18px;">New Recipe</div>
           <div id="r-err" role="alert" class="error-text"></div>
           <div class="field"><label for="r-name">Name</label><input id="r-name" placeholder="Black Wolf"></div>
           <div class="field"><label for="r-cat">Category</label>
@@ -434,11 +472,42 @@ route('/vault', async () => {
           </div>
           <div class="field"><label for="r-ing">Ingredient</label><input id="r-ing" placeholder="Bourbon, 2 oz"></div>
           <div class="field"><label for="r-method">Method</label><textarea id="r-method"></textarea></div>
-          <button class="primary" id="r-save" style="width:100%;">Save to Vault</button>
+          <div style="display:flex;gap:8px;">
+            <button class="primary" id="r-save" style="flex:1;">Save to Vault</button>
+            <button class="ghost" id="r-cancel-edit" style="display:none;">Cancel</button>
+          </div>
         </div>
       </div>
     </div>
   `);
+
+  function resetBuilder() {
+    editingId = null;
+    content.querySelector('#builder-title').textContent = 'New Recipe';
+    content.querySelector('#r-save').textContent = 'Save to Vault';
+    content.querySelector('#r-cancel-edit').style.display = 'none';
+    content.querySelector('#r-name').value = '';
+    content.querySelector('#r-cat').value = 'Classic';
+    content.querySelector('#r-ing').value = '';
+    content.querySelector('#r-method').value = '';
+  }
+
+  function loadIntoBuilder(r) {
+    editingId = r.id;
+    content.querySelector('#builder-title').textContent = `Editing — ${r.name}`;
+    content.querySelector('#r-save').textContent = 'Save Changes';
+    content.querySelector('#r-cancel-edit').style.display = 'block';
+    content.querySelector('#r-name').value = r.name;
+    content.querySelector('#r-cat').value = r.category;
+    // V1.1 note: the builder's single-ingredient-row UI is inherited from V1 (Stage 7's minimal
+    // build); editing a multi-ingredient recipe here shows the first ingredient only, and saving
+    // replaces the full ingredient list with whatever's in this one field - a real, known
+    // limitation of the current minimal frontend, not hidden from the person using it.
+    const firstIng = r.ingredients[0];
+    content.querySelector('#r-ing').value = firstIng ? `${firstIng.amount || ''} ${firstIng.unit || ''} ${firstIng.ingredient_name}`.trim() : '';
+    content.querySelector('#r-method').value = r.method || '';
+    content.querySelector('#r-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 
   function renderGrid(list) {
     const grid = content.querySelector('#v-grid');
@@ -447,10 +516,11 @@ route('/vault', async () => {
       <div class="card" style="cursor:pointer;" data-open="${r.id}">
         <div class="mono" style="font-size:9px;letter-spacing:1.5px;color:var(--gold-dim);text-transform:uppercase;">${r.category}</div>
         <div class="display" style="font-size:19px;margin:8px 0 6px;">${r.name}</div>
+        <div class="mono" style="font-size:9px;color:var(--text-faint);">Tap to edit</div>
       </div>`).join('');
     grid.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', async () => {
       const r = await api.getRecipe(el.dataset.open);
-      alert(`${r.name}\n\n${r.ingredients.map((i) => `${i.amount || ''} ${i.unit || ''} ${i.ingredient_name}`).join('\n')}\n\n${r.method || ''}`);
+      loadIntoBuilder(r);
     }));
   }
   renderGrid(recipes);
@@ -458,14 +528,22 @@ route('/vault', async () => {
   content.querySelector('#v-search').addEventListener('input', async (e) => {
     renderGrid(await api.listRecipes({ search: e.target.value }));
   });
+  content.querySelector('#r-cancel-edit').addEventListener('click', resetBuilder);
   content.querySelector('#r-save').addEventListener('click', async () => {
     const name = content.querySelector('#r-name').value;
     const category = content.querySelector('#r-cat').value;
     const ingText = content.querySelector('#r-ing').value;
     const method = content.querySelector('#r-method').value;
+    const payload = { name, category, method, ingredients: [{ ingredient_name: ingText || 'Ingredient' }] };
     try {
-      await api.createRecipe({ name, category, method, ingredients: [{ ingredient_name: ingText || 'Ingredient' }] });
-      toast('Recipe added to vault');
+      if (editingId) {
+        await api.updateRecipe(editingId, payload);
+        toast('Recipe updated');
+      } else {
+        await api.createRecipe(payload);
+        toast('Recipe added to vault');
+      }
+      resetBuilder();
       render();
     } catch (err) { content.querySelector('#r-err').textContent = err.message; }
   });

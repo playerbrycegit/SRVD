@@ -46,6 +46,7 @@ const api = {
   isAuthenticated: () => Boolean(getToken()),
 
   logShift: (input) => apiRequest('/shifts', { method: 'POST', body: input }),
+  updateShift: (id, input) => apiRequest(`/shifts/${id}`, { method: 'PATCH', body: input }),
   listShifts: () => apiRequest('/shifts'),
   deleteShift: (id) => apiRequest(`/shifts/${id}`, { method: 'DELETE' }),
   getStats: () => apiRequest('/shifts/stats'),
@@ -53,6 +54,7 @@ const api = {
   getGoalProgress: () => apiRequest('/goals'),
 
   createRecipe: (input) => apiRequest('/recipes', { method: 'POST', body: input }),
+  updateRecipe: (id, input) => apiRequest(`/recipes/${id}`, { method: 'PATCH', body: input }),
   listRecipes: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return apiRequest(`/recipes${qs ? '?' + qs : ''}`);

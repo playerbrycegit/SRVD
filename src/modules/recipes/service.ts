@@ -39,6 +39,36 @@ export class RecipesService {
     return recipe;
   }
 
+  /**
+   * V1.1 Must-Have (approved decision package §10, "Edit Recipe"). Ingredients are replaced
+   * wholesale (delete existing rows, insert the new set) rather than diffed - the decision
+   * package flagged this as "the one added wrinkle" versus Edit Shift, and wholesale replacement
+   * inside the existing transaction pattern (already proven in createRecipe) is the smallest
+   * reliable way to handle add/remove/reorder in one operation without new diffing logic.
+   */
+  updateRecipe(userId: string, recipeId: string, input: Partial<RecipeInput>): RecipeWithIngredients | null {
+    const existing = this.getRecipe(userId, recipeId);
+    if (!existing) return null; // ownership-scoped, same as updateShift
+    const v = validateRecipe(input);
+    const now = Date.now();
+    this.db.transaction(() => {
+      this.db.run(
+        `UPDATE recipes SET name = ?, category = ?, glassware = ?, method = ?, tasting_notes = ?, updated_at = ?
+         WHERE id = ? AND user_id = ?`,
+        [v.name, v.category, v.glassware, v.method, v.tasting_notes, now, recipeId, userId]
+      );
+      this.db.run('DELETE FROM recipe_ingredients WHERE recipe_id = ?', [recipeId]);
+      for (const ing of v.ingredients) {
+        this.db.run(
+          `INSERT INTO recipe_ingredients (id, recipe_id, sort_order, amount, unit, ingredient_name)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [randomUUID(), recipeId, ing.sort_order, ing.amount, ing.unit, ing.ingredient_name]
+        );
+      }
+    });
+    return this.getRecipe(userId, recipeId);
+  }
+
   /** Ownership-scoped by construction. Returns null (not another user's data) if the recipe
    * exists but belongs to someone else. */
   getRecipe(userId: string, recipeId: string): RecipeWithIngredients | null {
