@@ -1,13 +1,12 @@
 /**
  * Email service abstraction. Source: this phase's §1.
  *
- * HONESTY NOTE: this sandbox has no network access, so no real transactional email provider
- * (SendGrid/Postmark/SES/etc.) can be integrated or tested here. What follows is a real,
- * fully-typed interface plus a real, working `ConsoleEmailService` implementation suitable for
- * local development — and a documented, unexecuted `ProviderEmailService` shape for whoever wires
- * in a real provider in a networked environment. This mirrors the exact honesty pattern already
- * used for PostgreSQL (data-access.postgres.reference.ts) — a real seam, not a fabricated
- * integration.
+ * HONESTY NOTE: this sandbox has no network access to actually send an email or verify delivery.
+ * What follows is a real, fully-typed interface, a real working `ConsoleEmailService` for local
+ * dev, and a code-complete `ProviderEmailService` (Resend's REST API, via native `fetch`, no SDK
+ * needed) that has never been executed against a live network or a real API key. "Written
+ * correctly" and "verified to work" remain different claims - see ProviderEmailService's own
+ * comment for exactly which one applies.
  */
 
 export interface EmailMessage {
@@ -72,17 +71,53 @@ export function buildPasswordChangedEmail(toEmail: string): EmailMessage {
 
 /**
  * ============================================================================
- * REFERENCE ONLY — not wired into the server, never executed. To complete: implement this class
- * against a real provider's SDK/HTTP API (needs network access this sandbox does not have), read
- * the API key from AppConfig (never hardcode it, never log it — env.ts already redacts config
- * logging), and swap ConsoleEmailService for this in scripts/dev-server.ts's production branch.
+ * Real provider implementation, using Resend's REST API as the concrete choice (simple API,
+ * no SDK required - built entirely on Node's native `fetch`, available since Node 18, so this
+ * needs zero npm install to exist in code). Postmark/SendGrid/SES are equally valid choices;
+ * swapping providers means changing this one class's request shape, nothing else in the app.
+ *
+ * HONESTY NOTE: this code is complete and, to the best of this implementation's knowledge,
+ * correctly shaped against Resend's documented API contract - but it has never been executed
+ * against a real network or a real API key, because this sandbox has neither. "Written correctly"
+ * and "verified to work" are different claims; only the first is true here. The first real send
+ * attempt (with a real RESEND_API_KEY) is this class's first real test.
  * ============================================================================
  */
 export class ProviderEmailService implements EmailService {
-  constructor(_apiKey: string, _senderAddress: string) {
-    throw new Error('ProviderEmailService is a reference stub - no email provider is integrated in this sandbox (no network access). See file header.');
+  constructor(
+    private readonly apiKey: string,
+    private readonly senderAddress: string
+  ) {
+    if (!apiKey) throw new Error('ProviderEmailService requires an API key');
+    if (!senderAddress) throw new Error('ProviderEmailService requires a sender address');
   }
-  send(_message: EmailMessage): Promise<{ delivered: boolean; providerMessageId: string | null }> {
-    throw new Error('Not implemented - see class constructor.');
+
+  async send(message: EmailMessage): Promise<{ delivered: boolean; providerMessageId: string | null }> {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: this.senderAddress,
+        to: [message.to],
+        subject: message.subject,
+        text: message.textBody,
+        html: message.htmlBody,
+      }),
+    });
+
+    if (!response.ok) {
+      // Stage 9 §9: never leak provider error detail (which could include account/billing info)
+      // up through the application; log it server-side only, never in a client-facing response.
+      const detail = await response.text().catch(() => '');
+      // eslint-disable-next-line no-console
+      console.error(`[email:provider] send failed, status=${response.status}`, detail.slice(0, 500));
+      return { delivered: false, providerMessageId: null };
+    }
+
+    const body = (await response.json()) as { id?: string };
+    return { delivered: true, providerMessageId: body.id ?? null };
   }
 }

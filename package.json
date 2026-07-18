@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p .",
     "migrate": "npm run build && node -e \"const {createDb,runMigrations}=require('./dist/src/shared-kernel/data-access');const db=createDb();console.log(runMigrations(db));\"",
+    "seed": "npm run build && node dist/scripts/seed.js",
     "server": "npm run build && node dist/scripts/dev-server.js",
     "web": "npm run build && node -e \"require('./dist/src/http/static-server').createStaticServer().listen(process.env.WEB_PORT||4002,()=>console.log('STATION web app listening'))\"",
     "typecheck": "tsc --noEmit -p .",
@@ -13,6 +14,10 @@
   },
   "engines": {
     "node": ">=22.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^22.0.0"
   },
   "_notes": {
     "runtime": "TypeScript, strict mode, compiled via tsc to dist/. Runtime deps are still zero external packages - node:sqlite, node:test, node:http are Node built-ins. TypeScript itself (tsc/@types/node/undici-types) is available globally in this sandbox and vendored into node_modules/ for this project's use, not installed via npm (no network access - see README).",

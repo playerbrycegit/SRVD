@@ -22,6 +22,7 @@ import { CalculationError, scaleBatch, calculateAbv, convertUnit } from '../shar
 import { writeAudit } from '../shared-kernel/audit';
 import { ConsoleAnalytics, trackSafely } from '../shared-kernel/analytics';
 import { isRateLimited, AUTH_LIMIT, STANDARD_LIMIT, EXPORT_LIMIT } from './rate-limit';
+import { buildVerificationEmail, buildPasswordResetEmail, buildPasswordChangedEmail, type EmailService } from '../shared-kernel/email';
 import type { Database } from '../shared-kernel/data-access';
 import type { AppConfig } from '../shared-kernel/env';
 import type { ApiSuccessEnvelope, ApiErrorEnvelope } from '../shared-kernel/types';
@@ -49,7 +50,12 @@ async function readJsonBody(req: http.IncomingMessage): Promise<Record<string, u
   }
 }
 
-export function createServer(db: Database, config: Pick<AppConfig, 'allowDevTokenExposure'>): http.Server {
+export function createServer(
+  db: Database,
+  config: Pick<AppConfig, 'allowDevTokenExposure'>,
+  email?: EmailService,
+  appUrl: string = 'http://localhost:4002'
+): http.Server {
   const auth = new AuthService(db);
   const shifts = new ShiftsService(db);
   const recipes = new RecipesService(db);
@@ -82,6 +88,14 @@ export function createServer(db: Database, config: Pick<AppConfig, 'allowDevToke
         const body = await readJsonBody(req);
         const result = auth.register(body as { email: string; password: string });
         const verificationToken = auth.issueVerificationToken(result.id);
+        if (email) {
+          const verificationUrl = `${appUrl}/#/verify?token=${encodeURIComponent(verificationToken)}`;
+          void email.send(buildVerificationEmail(result.email, verificationUrl)).catch((err) => {
+            // Stage 9 §9: an email-send failure must never break registration itself.
+            // eslint-disable-next-line no-console
+            console.error('[email] verification send failed', err);
+          });
+        }
         return sendJson(res, 201, { data: result, devOnly: devOnly({ verificationToken }) });
       }
       if (req.method === 'POST' && url.pathname === '/auth/verify-email') {
@@ -92,12 +106,25 @@ export function createServer(db: Database, config: Pick<AppConfig, 'allowDevToke
       if (req.method === 'POST' && url.pathname === '/auth/request-password-reset') {
         const body = await readJsonBody(req);
         const result = auth.requestPasswordReset(body.email as string);
+        if (email && result.token) {
+          const resetUrl = `${appUrl}/#/reset-password?token=${encodeURIComponent(result.token)}`;
+          void email.send(buildPasswordResetEmail(body.email as string, resetUrl)).catch((err) => {
+            // eslint-disable-next-line no-console
+            console.error('[email] reset send failed', err);
+          });
+        }
         return sendJson(res, 200, { data: { requested: true }, devOnly: devOnly({ resetToken: result.token }) });
       }
       if (req.method === 'POST' && url.pathname === '/auth/reset-password') {
         const body = await readJsonBody(req);
         const result = auth.resetPassword({ token: body.token as string, newPassword: body.newPassword as string });
-        return sendJson(res, 200, { data: result });
+        if (email && result.email) {
+          void email.send(buildPasswordChangedEmail(result.email)).catch((err) => {
+            // eslint-disable-next-line no-console
+            console.error('[email] password-changed notification failed', err);
+          });
+        }
+        return sendJson(res, 200, { data: { reset: result.reset } });
       }
       if (req.method === 'POST' && url.pathname === '/auth/login') {
         const body = await readJsonBody(req);

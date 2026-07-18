@@ -124,15 +124,16 @@ export class AuthService {
     return { requested: true, token };
   }
 
-  resetPassword({ token, newPassword }: ResetPasswordInput): { reset: true } {
+  resetPassword({ token, newPassword }: ResetPasswordInput): { reset: true; email: string } {
     validatePassword(newPassword);
     const record = this._consumeToken(token, 'password_reset');
     if (!record) throw new ValidationError('This reset link is invalid or has expired', null);
+    const user = this.db.get<UserRow>('SELECT email FROM users WHERE id = ?', [record.user_id]);
     this.db.run('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?', [hashPassword(newPassword), Date.now(), record.user_id]);
     // Stage 4 §6: a password reset should not leave other sessions silently valid forever.
     this.db.run('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL', [Date.now(), record.user_id]);
     writeAudit(this.db, { userId: record.user_id, action: 'password_reset', resourceType: 'users', resourceId: record.user_id });
-    return { reset: true };
+    return { reset: true, email: user?.email ?? '' };
   }
 
   private _issueToken(userId: string, purpose: TokenPurpose, ttlMs: number): string {
