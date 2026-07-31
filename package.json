@@ -1,7 +1,7 @@
 {
   "name": "srvd",
-  "version": "0.2.0-alpha",
-  "description": "SRVD \u2014 professional operating system for bartenders. V1 scope: Auth, Home, Tools, Vault. TypeScript, strict mode.",
+  "version": "1.0.0-beta.1",
+  "description": "SRVD \u2014 professional operating system for bartenders. V1.1 scope: Auth, Home, Tools, Vault. TypeScript, strict mode.",
   "private": true,
   "scripts": {
     "build": "tsc -p .",
