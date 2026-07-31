@@ -15,7 +15,7 @@ test('static server: serves index.html at root', async () => {
     const res = await fetch(`${base}/`);
     assert.equal(res.status, 200);
     const body = await res.text();
-    assert.match(body, /STATION/);
+    assert.match(body, /SRVD/);
   });
 });
 
@@ -33,7 +33,7 @@ test('static server: serves the shared calculation engine so client-side Tools r
     assert.equal(res.status, 200);
     const body = await res.text();
     assert.match(body, /scaleBatch/);
-    assert.match(body, /STATION_CALC/); // confirms the browser export path is present
+    assert.match(body, /SRVD_CALC/); // confirms the browser export path is present
   });
 });
 
@@ -41,7 +41,7 @@ test('static server: unknown static path returns the SPA fallback (index.html), 
   await withStaticServer(async (base) => {
     const res = await fetch(`${base}/some/client/route`);
     assert.equal(res.status, 200);
-    assert.match(await res.text(), /STATION/);
+    assert.match(await res.text(), /SRVD/);
   });
 });
 

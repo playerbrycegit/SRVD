@@ -1,23 +1,27 @@
 {
-  "name": "station",
+  "name": "srvd",
   "version": "0.2.0-alpha",
-  "description": "STATION — professional operating system for bartenders. V1 scope: Auth, Home, Tools, Vault. TypeScript, strict mode.",
+  "description": "SRVD \u2014 professional operating system for bartenders. V1 scope: Auth, Home, Tools, Vault. TypeScript, strict mode.",
   "private": true,
   "scripts": {
     "build": "tsc -p .",
     "migrate": "npm run build && node -e \"const {createDb,runMigrations}=require('./dist/src/shared-kernel/data-access');const db=createDb();console.log(runMigrations(db));\"",
     "seed": "npm run build && node dist/scripts/seed.js",
     "server": "npm run build && node dist/scripts/dev-server.js",
-    "web": "npm run build && node -e \"require('./dist/src/http/static-server').createStaticServer().listen(process.env.WEB_PORT||4002,()=>console.log('STATION web app listening'))\"",
+    "web": "npm run build && node -e \"require('./dist/src/http/static-server').createStaticServer().listen(process.env.WEB_PORT||4002,()=>console.log('SRVD web app listening'))\"",
     "typecheck": "tsc --noEmit -p .",
-    "test": "npm run build && node --test test/*.test.js"
+    "test": "npm run build && node --test test/*.test.js",
+    "start": "npm run build && node dist/scripts/prod-server.js",
+    "lint": "eslint . --ext .ts"
   },
   "engines": {
     "node": ">=22.5.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "eslint": "^9.39.5",
     "typescript": "^5.5.0",
-    "@types/node": "^22.0.0"
+    "typescript-eslint": "^8.65.0"
   },
   "_notes": {
     "runtime": "TypeScript, strict mode, compiled via tsc to dist/. Runtime deps are still zero external packages - node:sqlite, node:test, node:http are Node built-ins. TypeScript itself (tsc/@types/node/undici-types) is available globally in this sandbox and vendored into node_modules/ for this project's use, not installed via npm (no network access - see README).",

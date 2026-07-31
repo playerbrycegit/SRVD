@@ -42,16 +42,16 @@ export class ConsoleEmailService implements EmailService {
 export function buildVerificationEmail(toEmail: string, verificationUrl: string): EmailMessage {
   return {
     to: toEmail,
-    subject: 'Verify your STATION account',
-    textBody: `Verify your email to start using STATION: ${verificationUrl}\n\nThis link expires in 24 hours. If you didn't create this account, you can ignore this email.`,
-    htmlBody: `<p>Verify your email to start using STATION.</p><p><a href="${verificationUrl}">Verify Email</a></p><p>This link expires in 24 hours. If you didn't create this account, you can ignore this email.</p>`,
+    subject: 'Verify your SRVD account',
+    textBody: `Verify your email to start using SRVD: ${verificationUrl}\n\nThis link expires in 24 hours. If you didn't create this account, you can ignore this email.`,
+    htmlBody: `<p>Verify your email to start using SRVD.</p><p><a href="${verificationUrl}">Verify Email</a></p><p>This link expires in 24 hours. If you didn't create this account, you can ignore this email.</p>`,
   };
 }
 
 export function buildPasswordResetEmail(toEmail: string, resetUrl: string): EmailMessage {
   return {
     to: toEmail,
-    subject: 'Reset your STATION password',
+    subject: 'Reset your SRVD password',
     textBody: `Reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email — your password hasn't changed.`,
     htmlBody: `<p>Reset your password.</p><p><a href="${resetUrl}">Reset Password</a></p><p>This link expires in 1 hour. If you didn't request this, you can ignore this email — your password hasn't changed.</p>`,
   };
@@ -63,7 +63,7 @@ export function buildPasswordResetEmail(toEmail: string, resetUrl: string): Emai
 export function buildPasswordChangedEmail(toEmail: string): EmailMessage {
   return {
     to: toEmail,
-    subject: 'Your STATION password was changed',
+    subject: 'Your SRVD password was changed',
     textBody: 'Your password was just changed. If this was you, no action is needed. If you did not make this change, reset your password immediately and contact support.',
     htmlBody: '<p>Your password was just changed. If this was you, no action is needed. If you did not make this change, reset your password immediately and contact support.</p>',
   };

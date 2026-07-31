@@ -1,4 +1,4 @@
-# STATION — Bartender OS (V1 + V1.1)
+# SRVD — Bartender OS (V1 + V1.1)
 
 The professional operating system for bartenders. Auth, Home (shifts/tips/goals), Tools
 (batch/ABV/unit conversion), Vault (recipes) — including V1.1's Edit Shift and Edit Recipe.
@@ -52,12 +52,12 @@ package.json
 
 ```bash
 git clone <this-repo-url>
-cd station
+cd srvd
 cp .env.example .env          # defaults are fine for local dev, no values required
 npm install                    # installs typescript + @types/node (see Known Limitations)
 npm run build                  # compiles src/ + scripts/ to dist/
 npm run migrate                # applies all 11 SQLite migrations, idempotent
-npm run seed                   # OPTIONAL: creates demo@station.local / demopassword123 with sample data
+npm run seed                   # OPTIONAL: creates demo@srvd.local / demopassword123 with sample data
 ```
 
 Then, in two separate terminals:
@@ -112,7 +112,7 @@ this today. Neither has been executed against a real account.
 7. Deploy. Verify `GET /health` returns `{"data":{"status":"ok"}}` on the assigned Railway domain.
 8. Deploy the frontend (`/web`) either as a second Railway service running
    `node dist/src/http/static-server.js`, or via any static host - it's plain HTML/CSS/JS with one
-   config line (`window.STATION_API_BASE`) that needs to point at the API service's URL.
+   config line (`window.SRVD_API_BASE`) that needs to point at the API service's URL.
 
 ### Render
 
@@ -125,7 +125,7 @@ this today. Neither has been executed against a real account.
    Render's shell access (`render shell`) or a direct `psql` connection both work.
 7. Deploy, verify `/health`.
 8. Deploy `/web` as a Render Static Site (build command: none needed, publish directory: `web/`)
-   or as a second service running `static-server.js`; point `window.STATION_API_BASE` at the API
+   or as a second service running `static-server.js`; point `window.SRVD_API_BASE` at the API
    service's Render URL.
 
 **Neither of these has been run.** Follow them, and the first real run is the actual verification -

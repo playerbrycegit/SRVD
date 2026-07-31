@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_submissions (created
 
 -- ============================================================================
 -- One-active-shift enforcement: NOT implemented in this migration set, because it doesn't exist
--- in the SQLite schema either. STATION's approved V1 scope allows multiple shifts per user with
+-- in the SQLite schema either. SRVD's approved V1 scope allows multiple shifts per user with
 -- no "active shift" status concept. If that changes, it needs a new status column and a partial
 -- unique index (CREATE UNIQUE INDEX ... WHERE status = 'active') - a real schema and product
 -- change, not implemented here since it was never part of approved scope.

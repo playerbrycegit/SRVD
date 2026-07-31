@@ -116,7 +116,7 @@ export { round };
 // UMD-style dual export: Node (require) and browser (<script> tag) load the exact same
 // implementation - Stage 9 §1 forbids a second, duplicated client-side copy of these formulas.
 // This mirrors what the pre-migration JS version did; carried forward deliberately, not dropped.
-declare const window: (Window & { STATION_CALC?: unknown }) | undefined;
+declare const window: (Window & { SRVD_CALC?: unknown }) | undefined;
 if (typeof window !== 'undefined') {
-  window.STATION_CALC = { CalculationError, scaleBatch, calculateAbv, convertUnit, ML_PER_UNIT, round };
+  window.SRVD_CALC = { CalculationError, scaleBatch, calculateAbv, convertUnit, ML_PER_UNIT, round };
 }

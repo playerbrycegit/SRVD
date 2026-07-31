@@ -1,4 +1,4 @@
-# STATION — Bug Triage Framework
+# SRVD — Bug Triage Framework
 
 ## Priority Definitions
 
@@ -21,7 +21,7 @@ user-selected severity as final without review.*
 
 | Field | Notes |
 |---|---|
-| Identifier | Stable ID, e.g. `STATION-001` |
+| Identifier | Stable ID, e.g. `SRVD-001` |
 | Summary | One line |
 | Priority | P0–P3 (assigned during triage, not copied from submitted severity) |
 | Severity | As submitted by the reporter, kept separately from Priority |

@@ -1,8 +1,8 @@
-# Welcome to the STATION Private Alpha
+# Welcome to the SRVD Private Alpha
 
-## What STATION is
+## What SRVD is
 
-STATION is a professional tool built for the person behind the bar — not guests, not managers.
+SRVD is a professional tool built for the person behind the bar — not guests, not managers.
 Right now it covers three things: logging your shifts and tips, a private space to save your
 recipes, and a few calculators built for real bar math (batch scaling, ABV/proof, unit conversion).
 
@@ -26,7 +26,7 @@ a date and don't want to promise one.
 
 ## Test-period expectations
 
-We're asking you to use STATION the way you'd actually use it — logging real shifts, saving real
+We're asking you to use SRVD the way you'd actually use it — logging real shifts, saving real
 recipes, running real calculations — for the length of the test period we agree on together. There's
 no minimum daily requirement; use it when it's actually useful to you, and tell us when it isn't.
 

@@ -75,7 +75,7 @@ export class SqliteDatabase implements Database {
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', '..', '..', 'db', 'migrations');
 
-export function createDb(location: string = path.join(__dirname, '..', '..', '..', 'db', 'station.dev.sqlite')): Database {
+export function createDb(location: string = path.join(__dirname, '..', '..', '..', 'db', 'srvd.dev.sqlite')): Database {
   return new SqliteDatabase(location);
 }
 

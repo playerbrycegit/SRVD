@@ -9,14 +9,14 @@ try {
 } catch (err) {
   if (err instanceof EnvironmentValidationError) {
     // eslint-disable-next-line no-console
-    console.error(`[station] Refusing to start: ${err.message}`);
+    console.error(`[srvd] Refusing to start: ${err.message}`);
     process.exit(1);
   }
   throw err;
 }
 
 // eslint-disable-next-line no-console
-console.log('[station] Config loaded:', describeConfigForLogging(config));
+console.log('[srvd] Config loaded:', describeConfigForLogging(config));
 
 // Real provider in production (requires EMAIL_PROVIDER_API_KEY / EMAIL_SENDER_ADDRESS, already
 // enforced present by loadConfig's production validation); console logging everywhere else.
@@ -26,13 +26,13 @@ const emailService: EmailService = config.nodeEnv === 'production' && emailApiKe
   ? new ProviderEmailService(emailApiKey, emailSender)
   : new ConsoleEmailService(config.allowDevTokenExposure);
 
-const db = createDb(); // defaults to db/station.dev.sqlite (persistent, not :memory:)
+const db = createDb(); // defaults to db/srvd.dev.sqlite (persistent, not :memory:)
 const applied = runMigrations(db);
 // eslint-disable-next-line no-console
-console.log(`[station] ${applied.length} migrations applied`);
+console.log(`[srvd] ${applied.length} migrations applied`);
 
 const server = createServer(db, config, emailService, config.appUrl);
 server.listen(config.port, () => {
   // eslint-disable-next-line no-console
-  console.log(`[station] API listening on http://localhost:${config.port}`);
+  console.log(`[srvd] API listening on http://localhost:${config.port}`);
 });

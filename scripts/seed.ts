@@ -21,7 +21,7 @@ if (process.env.NODE_ENV === 'production') {
   process.exit(1);
 }
 
-const SEED_EMAIL = 'demo@station.local';
+const SEED_EMAIL = 'demo@srvd.local';
 const SEED_PASSWORD = 'demopassword123';
 
 const db = createDb();

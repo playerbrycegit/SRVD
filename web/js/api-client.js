@@ -3,8 +3,8 @@
  * No framework dependency - matches Stage 4 §2's decision to keep the vanilla core rather than
  * introduce React speculatively.
  */
-const API_BASE = window.STATION_API_BASE || 'http://localhost:4001';
-const TOKEN_KEY = 'station_session_token';
+const API_BASE = window.SRVD_API_BASE ?? '';
+const TOKEN_KEY = 'srvd_session_token';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
 function setToken(token) { localStorage.setItem(TOKEN_KEY, token); }
@@ -67,4 +67,4 @@ const api = {
   calcConvert: (input) => apiRequest('/tools/convert', { method: 'POST', body: input }),
 };
 
-window.STATION_API = api;
+window.SRVD_API = api;

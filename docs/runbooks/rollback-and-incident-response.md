@@ -1,4 +1,4 @@
-# STATION — Rollback & Incident Response Runbook
+# SRVD — Rollback & Incident Response Runbook
 
 **Status: never executed** — same honesty note as `deployment.md`. Written to be correct and
 usable the first time it's actually needed, not to imply it's been rehearsed against real

@@ -49,8 +49,7 @@ jobs:
         continue-on-error: true # .prettierrc.json exists but has never been run by a real prettier install - see prior audit
 
       - name: Lint
-        run: npx eslint .
-        continue-on-error: true # .eslintrc.json exists but has never been run by a real eslint install - see prior audit
+        run: npm run lint
 
       - name: Dependency audit
         run: npm audit --audit-level=high

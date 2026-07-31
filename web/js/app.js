@@ -1,8 +1,8 @@
 /**
- * STATION application shell. Hash-based router, no framework (Stage 4 §2). Renders into #app.
+ * SRVD application shell. Hash-based router, no framework (Stage 4 §2). Renders into #app.
  * Screens match Stage 7's UI Build Package specs for the approved V1 scope: Auth, Home, Tools, Vault.
  */
-const api = window.STATION_API;
+const api = window.SRVD_API;
 const app = document.getElementById('app');
 
 function h(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
@@ -50,7 +50,7 @@ function shell(activeTab, contentEl) {
         border-bottom:1px solid var(--border);z-index:50;">
         <div style="max-width:1040px;margin:0 auto;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;">
           <div style="display:flex;align-items:baseline;gap:10px;">
-            <span class="display" style="font-weight:600;font-size:22px;">STATION</span>
+            <span class="display" style="font-weight:600;font-size:22px;">SRVD</span>
             <span class="mono" style="font-size:9px;letter-spacing:2.5px;color:var(--gold);text-transform:uppercase;">Bartender OS</span>
           </div>
           <nav style="display:flex;gap:4px;">
@@ -76,7 +76,7 @@ function shell(activeTab, contentEl) {
 // ---------------- Auth screens (Stage 7) ----------------
 route('/', () => h(`
   <div style="max-width:360px;margin:80px auto;text-align:center;">
-    <div class="display" style="font-size:32px;font-weight:600;">STATION</div>
+    <div class="display" style="font-size:32px;font-weight:600;">SRVD</div>
     <p class="mono" style="font-size:9px;letter-spacing:2.5px;color:var(--gold);text-transform:uppercase;margin:8px 0 24px;">Bartender OS</p>
     <p style="color:var(--text-dim);margin-bottom:32px;">The professional operating system for bartenders.</p>
     <button class="primary" style="width:100%;margin-bottom:10px;" onclick="window.location.hash='/register'">Create Account</button>
