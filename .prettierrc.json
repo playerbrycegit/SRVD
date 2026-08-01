@@ -1,7 +1,0 @@
-{
-  "_note": "Not executable in this sandbox (no network to install prettier). Declared per Stage 5 formatting conventions already followed by hand in every file.",
-  "singleQuote": true,
-  "semi": true,
-  "printWidth": 120,
-  "trailingComma": "es5"
-}
