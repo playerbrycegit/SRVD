@@ -11,6 +11,8 @@ import { RecipesService } from '../modules/recipes/service';
 import { AlphaService } from '../modules/alpha/service';
 import { SettingsService } from '../modules/settings/service';
 import { ConnectService } from '../modules/connect/service';
+import { ConnectUnsubscribeService } from '../modules/connect/unsubscribe';
+import { ConnectMessagingService } from '../modules/connect/messaging';
 import { ValidationError } from '../shared-kernel/validation';
 import { CalculationError, scaleBatch, calculateAbv, convertUnit } from '../shared-kernel/calculations';
 import { writeAudit } from '../shared-kernel/audit';
@@ -32,6 +34,11 @@ function sendError(res: http.ServerResponse, status: number, message: string, fi
   const json = JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(json) });
   res.end(json);
+}
+
+function sendHtml(res: http.ServerResponse, status: number, html: string): void {
+  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(html) });
+  res.end(html);
 }
 
 async function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -57,6 +64,9 @@ export function createServer(
   const alpha = new AlphaService(db);
   const settings = new SettingsService(db);
   const connect = new ConnectService(db);
+  const unsubscribe = new ConnectUnsubscribeService(db);
+  const connectSendingEnabled = process.env.CONNECT_EMAIL_SEND_ENABLED === 'true';
+  const messaging = email ? new ConnectMessagingService(db, email, appUrl, connectSendingEnabled) : null;
   const analytics = new ConsoleAnalytics();
 
   function devOnly(payload: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -78,7 +88,7 @@ export function createServer(
     }
 
     try {
-      // ---------- Auth (no token required) ----------
+      // ---------- Auth / public utility routes (no session required) ----------
       if (req.method === 'POST' && url.pathname === '/auth/register') {
         const body = await readJsonBody(req);
         const result = auth.register(body as { email: string; password: string });
@@ -136,6 +146,13 @@ export function createServer(
       }
       if (url.pathname === '/health') {
         return sendJson(res, 200, { data: { status: 'ok' } });
+      }
+      if (req.method === 'GET' && url.pathname === '/connect/unsubscribe') {
+        const result = unsubscribe.consume(url.searchParams.get('token'));
+        if (!result.unsubscribed) {
+          return sendHtml(res, 400, '<!doctype html><html><body style="font-family:system-ui;background:#0b0b0d;color:#f4efe4;padding:40px"><h1>Link unavailable</h1><p>This unsubscribe link is invalid, expired, or already used.</p></body></html>');
+        }
+        return sendHtml(res, 200, '<!doctype html><html><body style="font-family:system-ui;background:#0b0b0d;color:#f4efe4;padding:40px"><h1>Unsubscribed</h1><p>You will no longer receive this type of message from this bartender through SRVD.</p></body></html>');
       }
 
       // ---------- Authentication chokepoint ----------
@@ -350,6 +367,13 @@ export function createServer(
         );
         const eligible = results.filter((r) => r.eligible).length;
         return sendJson(res, 200, { data: { selected: results.length, eligible, excluded: results.length - eligible, recipients: results } });
+      }
+      if (req.method === 'POST' && url.pathname === '/connect/messages/send') {
+        if (!auth.isEmailVerified(authedUserId)) return sendError(res, 403, 'Verify your email before messaging guests', null);
+        if (!connectSendingEnabled || !messaging) return sendError(res, 503, 'Connect email sending is currently disabled', null);
+        const body = await readJsonBody(req);
+        const result = await messaging.sendEmailCampaign(authedUserId, body);
+        return sendJson(res, 200, { data: result });
       }
 
       // ---------- Tools ----------
