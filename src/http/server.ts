@@ -1,14 +1,7 @@
 /**
- * HTTP server, converted to strict TypeScript. SUBSTITUTION NOTICE: Stage 4 §2 specifies a
- * Fastify-class framework; this sandbox cannot install one (no network). Route structure, auth
- * middleware placement, and the response envelope match Stage 9 §6, so porting to a real
- * framework later is a mechanical swap of this file, not a rewrite of business logic.
- *
- * SECURITY IMPROVEMENT in this migration: the `devOnly` field (verification/reset/invitation
- * tokens exposed directly in API responses) is now gated by `config.allowDevTokenExposure`, which
- * `env.ts` makes structurally false in production — closing the #1 Critical Blocker named in the
- * prior production audit ("token leakage... a real production blocker"). Previously this was
- * unconditional.
+ * SRVD HTTP server. All protected routes pass through the same session/ownership chokepoint.
+ * Development token exposure is controlled by config.allowDevTokenExposure and remains disabled
+ * structurally in production by env.ts.
  */
 import * as http from 'node:http';
 import { URL } from 'node:url';
@@ -17,6 +10,7 @@ import { ShiftsService } from '../modules/shifts/service';
 import { RecipesService } from '../modules/recipes/service';
 import { AlphaService } from '../modules/alpha/service';
 import { SettingsService } from '../modules/settings/service';
+import { ConnectService } from '../modules/connect/service';
 import { ValidationError } from '../shared-kernel/validation';
 import { CalculationError, scaleBatch, calculateAbv, convertUnit } from '../shared-kernel/calculations';
 import { writeAudit } from '../shared-kernel/audit';
@@ -32,6 +26,7 @@ function sendJson<T>(res: http.ServerResponse, status: number, body: ApiSuccessE
   res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(json) });
   res.end(json);
 }
+
 function sendError(res: http.ServerResponse, status: number, message: string, field: string | null = null): void {
   const body: ApiErrorEnvelope = { error: { message, field } };
   const json = JSON.stringify(body);
@@ -61,9 +56,9 @@ export function createServer(
   const recipes = new RecipesService(db);
   const alpha = new AlphaService(db);
   const settings = new SettingsService(db);
+  const connect = new ConnectService(db);
   const analytics = new ConsoleAnalytics();
 
-  /** Only attaches devOnly data when config permits it — see file header. */
   function devOnly(payload: Record<string, unknown>): Record<string, unknown> | undefined {
     return config.allowDevTokenExposure ? payload : undefined;
   }
@@ -91,7 +86,6 @@ export function createServer(
         if (email) {
           const verificationUrl = `${appUrl}/#/verify?token=${encodeURIComponent(verificationToken)}`;
           void email.send(buildVerificationEmail(result.email, verificationUrl)).catch((err) => {
-            // Stage 9 §9: an email-send failure must never break registration itself.
             // eslint-disable-next-line no-console
             console.error('[email] verification send failed', err);
           });
@@ -144,15 +138,13 @@ export function createServer(
         return sendJson(res, 200, { data: { status: 'ok' } });
       }
 
-      // ---------- Everything below requires a valid session (Stage 9 §6/§8 chokepoint) ----------
+      // ---------- Authentication chokepoint ----------
       const userId = auth.verifySession(bearer);
       const protectedRoute = !url.pathname.startsWith('/auth/');
       if (protectedRoute && !userId) {
         writeAudit(db, { userId: null, action: 'permission_denied', metadata: { path: url.pathname } });
         return sendError(res, 401, 'Authentication required', null);
       }
-      // TypeScript can't know userId is non-null past this guard on its own for every branch below,
-      // but every reachable branch here is gated by the check above — assert it once, explicitly.
       const authedUserId = userId as string;
 
       if (req.method === 'POST' && url.pathname === '/auth/delete-account') {
@@ -273,7 +265,94 @@ export function createServer(
         return sendJson(res, 200, { data: updated });
       }
 
-      // ---------- Tools (stateless, Shared Kernel calc engine, Stage 4 §16) ----------
+      // ---------- SERVD Connect ----------
+      if (req.method === 'POST' && url.pathname === '/connect/venues') {
+        const body = await readJsonBody(req);
+        return sendJson(res, 201, { data: connect.createVenue(authedUserId, body) });
+      }
+      if (req.method === 'GET' && url.pathname === '/connect/venues') {
+        return sendJson(res, 200, { data: connect.listVenues(authedUserId) });
+      }
+      if (req.method === 'POST' && url.pathname === '/connect/guests') {
+        const body = await readJsonBody(req);
+        const guest = connect.createGuest(authedUserId, body);
+        trackSafely(analytics, { name: 'connect_guest_created', userId: authedUserId, timestamp: Date.now(), properties: {} });
+        return sendJson(res, 201, { data: guest });
+      }
+      if (req.method === 'GET' && url.pathname === '/connect/guests') {
+        const search = url.searchParams.get('search') ?? '';
+        const includeArchived = url.searchParams.get('includeArchived') === 'true';
+        return sendJson(res, 200, { data: connect.listGuests(authedUserId, { search, includeArchived }) });
+      }
+      if (req.method === 'GET' && /^\/connect\/guests\/[^/]+$/.test(url.pathname)) {
+        const id = url.pathname.split('/')[3] as string;
+        const guest = connect.getGuest(authedUserId, id);
+        return guest ? sendJson(res, 200, { data: guest }) : sendError(res, 404, 'Guest not found', null);
+      }
+      if (req.method === 'PATCH' && /^\/connect\/guests\/[^/]+$/.test(url.pathname)) {
+        const id = url.pathname.split('/')[3] as string;
+        const body = await readJsonBody(req);
+        const guest = connect.updateGuest(authedUserId, id, body);
+        return guest ? sendJson(res, 200, { data: guest }) : sendError(res, 404, 'Guest not found', null);
+      }
+      if (req.method === 'DELETE' && /^\/connect\/guests\/[^/]+$/.test(url.pathname)) {
+        const id = url.pathname.split('/')[3] as string;
+        const archived = connect.archiveGuest(authedUserId, id);
+        return archived ? sendJson(res, 200, { data: { archived: true } }) : sendError(res, 404, 'Guest not found', null);
+      }
+      if (req.method === 'POST' && /^\/connect\/guests\/[^/]+\/visits$/.test(url.pathname)) {
+        const guestId = url.pathname.split('/')[3] as string;
+        const body = await readJsonBody(req);
+        const visit = connect.logVisit(authedUserId, guestId, body);
+        trackSafely(analytics, { name: 'connect_visit_logged', userId: authedUserId, timestamp: Date.now(), properties: {} });
+        return sendJson(res, 201, { data: visit });
+      }
+      if (req.method === 'GET' && /^\/connect\/guests\/[^/]+\/visits$/.test(url.pathname)) {
+        const guestId = url.pathname.split('/')[3] as string;
+        return sendJson(res, 200, { data: connect.listVisits(authedUserId, guestId) });
+      }
+      if (req.method === 'POST' && url.pathname === '/connect/lists') {
+        const body = await readJsonBody(req);
+        return sendJson(res, 201, { data: connect.createList(authedUserId, body) });
+      }
+      if (req.method === 'GET' && url.pathname === '/connect/lists') {
+        return sendJson(res, 200, { data: connect.listLists(authedUserId) });
+      }
+      if (req.method === 'POST' && /^\/connect\/lists\/[^/]+\/guests\/[^/]+$/.test(url.pathname)) {
+        const [, , , listId, , guestId] = url.pathname.split('/');
+        const added = connect.addGuestToList(authedUserId, listId as string, guestId as string);
+        return added ? sendJson(res, 200, { data: { added: true } }) : sendError(res, 404, 'List or guest not found', null);
+      }
+      if (req.method === 'GET' && /^\/connect\/lists\/[^/]+\/guests$/.test(url.pathname)) {
+        const listId = url.pathname.split('/')[3] as string;
+        return sendJson(res, 200, { data: connect.listGuestsInList(authedUserId, listId) });
+      }
+      if (req.method === 'POST' && /^\/connect\/guests\/[^/]+\/consent$/.test(url.pathname)) {
+        const guestId = url.pathname.split('/')[3] as string;
+        const body = await readJsonBody(req);
+        connect.setConsent(authedUserId, guestId, body);
+        return sendJson(res, 200, { data: { updated: true } });
+      }
+      if (req.method === 'POST' && /^\/connect\/guests\/[^/]+\/suppress$/.test(url.pathname)) {
+        const guestId = url.pathname.split('/')[3] as string;
+        const body = await readJsonBody(req);
+        connect.suppress(authedUserId, guestId, body.channel, typeof body.reason === 'string' ? body.reason : 'manual');
+        return sendJson(res, 200, { data: { suppressed: true } });
+      }
+      if (req.method === 'POST' && url.pathname === '/connect/messages/preview') {
+        const body = await readJsonBody(req);
+        const guestIds = Array.isArray(body.guestIds) ? body.guestIds.filter((v): v is string => typeof v === 'string') : [];
+        const results = connect.previewRecipients(
+          authedUserId,
+          guestIds,
+          body.channel,
+          typeof body.consentType === 'string' ? body.consentType : 'general_updates'
+        );
+        const eligible = results.filter((r) => r.eligible).length;
+        return sendJson(res, 200, { data: { selected: results.length, eligible, excluded: results.length - eligible, recipients: results } });
+      }
+
+      // ---------- Tools ----------
       if (req.method === 'POST' && url.pathname === '/tools/batch') {
         const body = await readJsonBody(req);
         return sendJson(res, 200, { data: scaleBatch(body as never) });
@@ -291,7 +370,6 @@ export function createServer(
     } catch (err) {
       if (err instanceof ValidationError) return sendError(res, 400, err.message, err.field);
       if (err instanceof CalculationError) return sendError(res, 400, err.message, null);
-      // Stage 9 §9: server errors never leak detail to the client.
       // eslint-disable-next-line no-console
       console.error(err);
       return sendError(res, 500, 'Something went wrong — try again', null);
