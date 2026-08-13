@@ -1,7 +1,5 @@
 /**
- * SERVD Connect beta UI.
- * Kept in a separate module so the existing V1 app shell remains stable. Messaging is preview-only
- * until a real provider and compliance workflow are configured and verified.
+ * SERVD Connect beta UI. Kept separate from the stable V1 shell to reduce regression risk.
  */
 
 function connectEsc(value) {
@@ -43,7 +41,7 @@ route('/connect', async () => {
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px;">
         <button class="ghost" data-connect-panel="guests">Guests</button>
         <button class="ghost" data-connect-panel="lists">Lists</button>
-        <button class="ghost" data-connect-panel="messages">Message Preview</button>
+        <button class="ghost" data-connect-panel="messages">Messages</button>
       </div>
 
       <div id="connect-panel"></div>
@@ -152,11 +150,34 @@ route('/connect', async () => {
         <div class="field"><label for="cv-venue">Venue</label><select id="cv-venue"><option value="">No venue</option>${venues.map((v) => `<option value="${connectEsc(v.id)}">${connectEsc(v.name)}</option>`).join('')}</select></div>
         <button class="ghost" id="cv-save" style="width:100%;">Log Visit</button>
         <div style="margin-top:14px;display:grid;gap:7px;">${visits.slice(0, 4).map((v) => `<div style="font-size:12px;color:var(--text-dim);border-left:2px solid var(--gold-dim);padding-left:10px;">${new Date(v.visited_at).toLocaleDateString()} — ${connectEsc(v.drinks || v.occasion || 'Visit')}</div>`).join('')}</div>
+        ${selectedGuest.email ? `
+          <div style="border-top:1px solid var(--border);margin-top:18px;padding-top:18px;">
+            <div class="mono" style="font-size:9px;color:var(--gold-dim);letter-spacing:1.5px;margin-bottom:8px;">EMAIL PERMISSION</div>
+            <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text-dim);margin-bottom:10px;">
+              <input id="consent-confirm" type="checkbox" style="margin-top:2px;">
+              <span>I confirm this guest explicitly gave me permission to receive updates by email.</span>
+            </label>
+            <div style="display:flex;gap:8px;">
+              <button class="ghost" id="consent-grant" style="flex:1;">Record Opt-In</button>
+              <button class="ghost" id="consent-revoke" style="flex:1;">Revoke / Unsubscribe</button>
+            </div>
+          </div>` : ''}
       </div>`;
     slot.querySelector('#cv-save').addEventListener('click', async () => {
       await api.logGuestVisit(selectedGuest.id, { venueId: slot.querySelector('#cv-venue').value || null, drinks: slot.querySelector('#cv-drink').value || null });
       toast('Visit logged');
       renderSelectedGuest();
+    });
+    const grant = slot.querySelector('#consent-grant');
+    if (grant) grant.addEventListener('click', async () => {
+      if (!slot.querySelector('#consent-confirm').checked) return toast('Confirm explicit guest permission first');
+      await api.setGuestConsent(selectedGuest.id, { channel: 'email', consentType: 'general_updates', status: 'granted', source: 'bartender_confirmed', languageVersion: 'beta-v1' });
+      toast('Email opt-in recorded');
+    });
+    const revoke = slot.querySelector('#consent-revoke');
+    if (revoke) revoke.addEventListener('click', async () => {
+      await api.setGuestConsent(selectedGuest.id, { channel: 'email', consentType: 'general_updates', status: 'revoked', source: 'bartender_recorded_revocation', languageVersion: 'beta-v1' });
+      toast('Guest unsubscribed from email');
     });
   }
 
@@ -187,30 +208,68 @@ route('/connect', async () => {
   }
 
   function renderMessages() {
-    const eligibleGuests = guests.filter((g) => g.email || g.phone);
+    const emailGuests = guests.filter((g) => g.email);
     panel().innerHTML = `
-      <div class="card" style="max-width:760px;">
-        <div class="mono" style="font-size:10px;letter-spacing:2px;color:var(--gold-dim);text-transform:uppercase;margin-bottom:8px;">Safe Send Preview</div>
-        <h2 class="display" style="font-size:24px;margin-bottom:8px;">Who can receive this?</h2>
-        <p style="color:var(--text-dim);font-size:13px;margin-bottom:20px;">Beta messaging is intentionally preview-only. SRVD will not send until a real provider, unsubscribe handling, quiet hours, and compliance configuration are verified.</p>
-        <div class="field"><label for="cm-channel">Channel</label><select id="cm-channel"><option value="email">Email</option><option value="sms">SMS</option></select></div>
+      <div class="card" style="max-width:820px;">
+        <div class="mono" style="font-size:10px;letter-spacing:2px;color:var(--gold-dim);text-transform:uppercase;margin-bottom:8px;">Consent-Gated Beta Messaging</div>
+        <h2 class="display" style="font-size:24px;margin-bottom:8px;">Message your regulars.</h2>
+        <p style="color:var(--text-dim);font-size:13px;margin-bottom:20px;">Email is available only when the server-side beta kill switch is enabled. SMS remains disabled. Every recipient is rechecked for consent and suppression at send time.</p>
+
+        <div class="field"><label for="cm-list">Start With a List</label><select id="cm-list"><option value="">Choose guests manually</option>${lists.map((l) => `<option value="${connectEsc(l.id)}">${connectEsc(l.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="cm-subject">Subject</label><input id="cm-subject" maxlength="120" placeholder="I’m behind the bar Friday"></div>
+        <div class="field"><label for="cm-body">Message</label><textarea id="cm-body" maxlength="2000" placeholder="Hey {{first_name}}, I’m working Friday night. Come see me."></textarea><div class="mono" style="font-size:8px;color:var(--text-faint);margin-top:4px;">Personalization: {{first_name}} or {{display_name}}</div></div>
+
+        <div class="mono" style="font-size:9px;color:var(--text-dim);margin-bottom:8px;">RECIPIENTS</div>
         <div style="max-height:280px;overflow:auto;border:1px solid var(--border);padding:10px;margin-bottom:16px;">
-          ${eligibleGuests.length ? eligibleGuests.map((g) => `<label style="display:flex;gap:10px;align-items:center;padding:8px;"><input type="checkbox" data-message-guest="${connectEsc(g.id)}"> <span>${connectEsc(g.display_name)}</span></label>`).join('') : `<div style="color:var(--text-faint);">Add guests with contact details first.</div>`}
+          ${emailGuests.length ? emailGuests.map((g) => `<label style="display:flex;gap:10px;align-items:center;padding:8px;"><input type="checkbox" data-message-guest="${connectEsc(g.id)}"> <span>${connectEsc(g.display_name)}</span></label>`).join('') : `<div style="color:var(--text-faint);">Add guests with email addresses first.</div>`}
         </div>
         <button class="primary" id="cm-preview">Preview Eligibility</button>
         <div id="cm-results" aria-live="polite" style="margin-top:18px;"></div>
       </div>`;
+
+    panel().querySelector('#cm-list').addEventListener('change', async (e) => {
+      panel().querySelectorAll('[data-message-guest]').forEach((el) => { el.checked = false; });
+      if (!e.target.value) return;
+      const members = await api.listGuestsInList(e.target.value);
+      const ids = new Set(members.map((m) => m.id));
+      panel().querySelectorAll('[data-message-guest]').forEach((el) => { el.checked = ids.has(el.dataset.messageGuest); });
+    });
+
     panel().querySelector('#cm-preview').addEventListener('click', async () => {
       const guestIds = [...panel().querySelectorAll('[data-message-guest]:checked')].map((el) => el.dataset.messageGuest);
-      const channel = panel().querySelector('#cm-channel').value;
-      const out = await api.previewMessageRecipients({ guestIds, channel, consentType: 'general_updates' });
+      const out = await api.previewMessageRecipients({ guestIds, channel: 'email', consentType: 'general_updates' });
+      const subject = panel().querySelector('#cm-subject').value;
+      const body = panel().querySelector('#cm-body').value;
       panel().querySelector('#cm-results').innerHTML = `
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
           <div class="card"><div class="display" style="font-size:24px;">${out.selected}</div><div class="mono" style="font-size:8px;color:var(--text-faint);">SELECTED</div></div>
           <div class="card"><div class="display" style="font-size:24px;color:var(--gold);">${out.eligible}</div><div class="mono" style="font-size:8px;color:var(--text-faint);">ELIGIBLE</div></div>
           <div class="card"><div class="display" style="font-size:24px;">${out.excluded}</div><div class="mono" style="font-size:8px;color:var(--text-faint);">EXCLUDED</div></div>
         </div>
-        ${out.recipients.map((r) => `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between;"><span>${connectEsc(guests.find((g) => g.id === r.guestId)?.display_name || 'Guest')}</span><span class="mono" style="font-size:9px;color:${r.eligible ? 'var(--gold)' : 'var(--text-faint)'};">${connectEsc(r.status)}</span></div>`).join('')}`;
+        ${out.recipients.map((r) => `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between;"><span>${connectEsc(guests.find((g) => g.id === r.guestId)?.display_name || 'Guest')}</span><span class="mono" style="font-size:9px;color:${r.eligible ? 'var(--gold)' : 'var(--text-faint)'};">${connectEsc(r.status)}</span></div>`).join('')}
+        ${out.eligible > 0 ? `<div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text-dim);margin-bottom:12px;"><input id="cm-confirm" type="checkbox" style="margin-top:2px;"><span>I reviewed this recipient list and confirm this message is appropriate for these opted-in guests.</span></label>
+          <button class="primary" id="cm-send" style="width:100%;">Send Email to ${out.eligible} Eligible Guest${out.eligible === 1 ? '' : 's'}</button>
+          <div id="cm-send-error" role="alert" class="error-text" style="margin-top:10px;"></div>
+        </div>` : ''}`;
+
+      const send = panel().querySelector('#cm-send');
+      if (send) send.addEventListener('click', async () => {
+        const err = panel().querySelector('#cm-send-error');
+        err.textContent = '';
+        if (!panel().querySelector('#cm-confirm').checked) return toast('Confirm the reviewed recipient list first');
+        try {
+          send.disabled = true;
+          send.textContent = 'Sending…';
+          const result = await api.sendConnectEmailCampaign({ subject, body, guestIds, consentType: 'general_updates', confirmed: true });
+          toast(`Sent to ${result.sent} guest${result.sent === 1 ? '' : 's'}`);
+          panel().querySelector('#cm-results').innerHTML = `<div class="card"><div class="display" style="font-size:24px;color:var(--gold);">${result.sent} sent</div><div style="color:var(--text-dim);font-size:12px;margin-top:6px;">${result.failed} failed · ${result.excluded} excluded by consent or contact rules</div></div>`;
+        } catch (error) {
+          err.textContent = error.message;
+          send.disabled = false;
+          send.textContent = 'Send Email';
+        }
+      });
     });
   }
 
