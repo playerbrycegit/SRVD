@@ -84,6 +84,7 @@ const api = {
   setGuestConsent: (guestId, input) => apiRequest(`/connect/guests/${guestId}/consent`, { method: 'POST', body: input }),
   suppressGuest: (guestId, input) => apiRequest(`/connect/guests/${guestId}/suppress`, { method: 'POST', body: input }),
   previewMessageRecipients: (input) => apiRequest('/connect/messages/preview', { method: 'POST', body: input }),
+  sendConnectEmailCampaign: (input) => apiRequest('/connect/messages/send', { method: 'POST', body: input }),
 };
 
 window.SRVD_API = api;
