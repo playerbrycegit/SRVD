@@ -101,6 +101,10 @@ export class ConnectMessagingService {
         [randomUUID(), campaignId, userId, item.guestId, item.status, now, now]
       );
     }
+    this.db.run(
+      "UPDATE message_recipients SET delivery_status='skipped',updated_at=? WHERE campaign_id=? AND user_id=? AND eligibility_status!='eligible'",
+      [Date.now(), campaignId, userId]
+    );
 
     let sent = 0;
     let failed = 0;
