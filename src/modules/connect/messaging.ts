@@ -109,7 +109,7 @@ export class ConnectMessagingService {
       const guest = this.connect.getGuest(userId, item.guestId);
       if (!guest?.email) continue;
       const unsubscribeToken = this.unsubscribe.issue(userId, guest.id, 'email');
-      const unsubscribeUrl = `${this.appUrl}/#/connect-unsubscribe?token=${encodeURIComponent(unsubscribeToken)}`;
+      const unsubscribeUrl = `${this.appUrl}/connect/unsubscribe?token=${encodeURIComponent(unsubscribeToken)}`;
       const personalizedBody = personalize(body, guest);
       const result = await this.email.send({
         to: guest.email,
