@@ -43,16 +43,14 @@ test('messaging: requires explicit send confirmation', async () => {
   }), /Confirm/);
 });
 
-test('messaging: sends only to consented guests and records excluded recipients', async () => {
+test('messaging: sends only to consented guests and records excluded recipients as skipped', async () => {
   const { db, connect, user, sent, messaging } = setup();
   const allowed = connect.createGuest(user.id, { firstName: 'Jordan', displayName: 'Jordan Miles', email: 'jordan@example.com' });
   const blocked = connect.createGuest(user.id, { displayName: 'No Consent', email: 'blocked@example.com' });
   connect.setConsent(user.id, allowed.id, { channel: 'email', consentType: 'general_updates', status: 'granted', source: 'guest_signup' });
-
   const result = await messaging.sendEmailCampaign(user.id, {
     subject: 'Friday at the bar', body: 'Hey {{first_name}}, come see me Friday.', guestIds: [allowed.id, blocked.id], confirmed: true,
   });
-
   assert.equal(result.selected, 2);
   assert.equal(result.eligible, 1);
   assert.equal(result.sent, 1);
@@ -60,11 +58,11 @@ test('messaging: sends only to consented guests and records excluded recipients'
   assert.equal(sent.length, 1);
   assert.match(sent[0].textBody, /Hey Jordan/);
   assert.match(sent[0].textBody, /\/connect\/unsubscribe\?token=/);
-
   const recipientRows = db.all('SELECT guest_id, eligibility_status, delivery_status FROM message_recipients WHERE campaign_id=? ORDER BY guest_id', [result.campaignId]);
   assert.equal(recipientRows.length, 2);
   const blockedRow = recipientRows.find((r) => r.guest_id === blocked.id);
   assert.equal(blockedRow.eligibility_status, 'no_consent');
+  assert.equal(blockedRow.delivery_status, 'skipped');
 });
 
 test('messaging: never exposes multiple recipients in one email', async () => {
