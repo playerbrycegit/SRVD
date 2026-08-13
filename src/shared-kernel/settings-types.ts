@@ -26,4 +26,15 @@ export interface DataExport {
   shifts: unknown[];
   goal: unknown | null;
   recipes: unknown[];
+  connect: {
+    venues: unknown[];
+    guests: unknown[];
+    visits: unknown[];
+    lists: unknown[];
+    listMemberships: unknown[];
+    consents: unknown[];
+    followers: unknown[];
+    messageCampaigns: unknown[];
+    messageRecipients: unknown[];
+  };
 }

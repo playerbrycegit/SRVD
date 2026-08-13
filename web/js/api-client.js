@@ -1,7 +1,5 @@
 /**
- * API client. Thin fetch wrapper matching the server's response envelope (Stage 9 §6).
- * No framework dependency - matches Stage 4 §2's decision to keep the vanilla core rather than
- * introduce React speculatively.
+ * API client. Thin fetch wrapper matching the server response envelope.
  */
 const API_BASE = window.SRVD_API_BASE ?? '';
 const TOKEN_KEY = 'srvd_session_token';
@@ -21,7 +19,7 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
   const json = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    if (res.status === 401) clearToken(); // Stage 7: Session Expired handling
+    if (res.status === 401) clearToken();
     const err = new Error(json?.error?.message || 'Request failed');
     err.field = json?.error?.field || null;
     err.status = res.status;
@@ -65,6 +63,28 @@ const api = {
   calcBatch: (input) => apiRequest('/tools/batch', { method: 'POST', body: input }),
   calcAbv: (input) => apiRequest('/tools/abv', { method: 'POST', body: input }),
   calcConvert: (input) => apiRequest('/tools/convert', { method: 'POST', body: input }),
+
+  // SERVD Connect
+  createVenue: (input) => apiRequest('/connect/venues', { method: 'POST', body: input }),
+  listVenues: () => apiRequest('/connect/venues'),
+  createGuest: (input) => apiRequest('/connect/guests', { method: 'POST', body: input }),
+  listGuests: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiRequest(`/connect/guests${qs ? '?' + qs : ''}`);
+  },
+  getGuest: (id) => apiRequest(`/connect/guests/${id}`),
+  updateGuest: (id, input) => apiRequest(`/connect/guests/${id}`, { method: 'PATCH', body: input }),
+  archiveGuest: (id) => apiRequest(`/connect/guests/${id}`, { method: 'DELETE' }),
+  logGuestVisit: (guestId, input) => apiRequest(`/connect/guests/${guestId}/visits`, { method: 'POST', body: input }),
+  listGuestVisits: (guestId) => apiRequest(`/connect/guests/${guestId}/visits`),
+  createGuestList: (input) => apiRequest('/connect/lists', { method: 'POST', body: input }),
+  listGuestLists: () => apiRequest('/connect/lists'),
+  addGuestToList: (listId, guestId) => apiRequest(`/connect/lists/${listId}/guests/${guestId}`, { method: 'POST', body: {} }),
+  listGuestsInList: (listId) => apiRequest(`/connect/lists/${listId}/guests`),
+  setGuestConsent: (guestId, input) => apiRequest(`/connect/guests/${guestId}/consent`, { method: 'POST', body: input }),
+  suppressGuest: (guestId, input) => apiRequest(`/connect/guests/${guestId}/suppress`, { method: 'POST', body: input }),
+  previewMessageRecipients: (input) => apiRequest('/connect/messages/preview', { method: 'POST', body: input }),
+  sendConnectEmailCampaign: (input) => apiRequest('/connect/messages/send', { method: 'POST', body: input }),
 };
 
 window.SRVD_API = api;
